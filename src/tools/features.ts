@@ -145,7 +145,7 @@ export function registerFeatureTools({
     {
       title: "Create Force Rule",
       description:
-        'Adds a targeting rule to an existing feature flag that forces a specific value when conditions are met. Use this for targeting specific users or segments without running an experiment. Example conditions (MongoDB-style syntax): Users in Canada: {"country": "CA"}, Beta testers: {"betaTester": true}, Specific IDs: {"id": {"$in": ["user1", "user2"]}}. Prerequisites: Feature flag must exist - create it first with create_feature_flag if needed. Common operators: $eq, $ne, $in, $nin, $gt, $lt, $regex. Do NOT use for A/B testing - use create_experiment instead for statistical analysis.',
+        'Adds a targeting rule to an existing feature flag that forces a specific value when conditions are met. This applies the rule to ALL default environments. For per-environment control, use add_feature_rule instead. Use this for targeting specific users or segments without running an experiment. Example conditions (MongoDB-style syntax): Users in Canada: {"country": "CA"}, Beta testers: {"betaTester": true}, Specific IDs: {"id": {"$in": ["user1", "user2"]}}. Prerequisites: Feature flag must exist - create it first with create_feature_flag if needed. Common operators: $eq, $ne, $in, $nin, $gt, $lt, $regex. Do NOT use for A/B testing - use create_experiment instead for statistical analysis.',
       inputSchema: z.object({
         featureId: featureFlagSchema.id,
         description: featureFlagSchema.description.optional().default(""),

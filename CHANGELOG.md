@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-03-11
+
+### Added
+
+- `update_feature_flag` — Update properties of an existing feature flag
+- `toggle_feature_flag` — Enable or disable a feature flag per-environment
+- `add_feature_rule` — Add a targeting rule to a specific environment
+- `reorder_feature_rules` — Set rule evaluation order for an environment
+- `remove_feature_rule` — Remove a rule from an environment
+- `update_experiment` — Update experiment properties
+- `start_experiment` — Launch a draft experiment
+- `stop_experiment` — Stop a running experiment, optionally declare winner
+- `archive_experiment` — Archive or unarchive an experiment
+- `refresh_experiment_results` — Trigger fresh analysis snapshot
+- `create_fact_metric` — Create a new fact metric
+- `update_fact_metric` — Update an existing fact metric
+- `list_fact_tables` — List available fact tables
+- `list_fact_metrics` — List fact metrics with full configuration
+
 ## [1.8.1] - 2026-03-09
 
 Re-publish of 1.8.0 to include `list_feature_keys` tool in npm package.
