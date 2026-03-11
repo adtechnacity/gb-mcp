@@ -679,7 +679,16 @@ git commit -m "feat: add metrics formatters with tests"
 Create `test/tools/write-tools-features.test.ts`:
 
 ```typescript
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+beforeEach(() => {
+  vi.resetModules();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 type RegisteredTool = {
   name: string;
@@ -1167,6 +1176,8 @@ Expected: FAIL.
 
 Add to `src/tools/features.ts`:
 
+**Note:** The spec includes `fileExtension` for this tool, but we intentionally omit it here. This tool modifies an existing flag (the user already has SDK integration code), so an SDK snippet adds no value — consistent with `update_feature_flag` which also omits it.
+
 ```typescript
 /**
  * Tool: add_feature_rule
@@ -1575,7 +1586,7 @@ server.registerTool(
   {
     title: "Remove Feature Rule",
     description:
-      "Removes a specific rule from an environment on a feature flag. Use get_feature_flags with featureFlagId to see current rules and their IDs.",
+      "Removes a specific rule from an environment on a feature flag. This permanently deletes the rule — it cannot be undone (the rule must be manually recreated). Use get_feature_flags with featureFlagId to see current rules and their IDs.",
     inputSchema: z.object({
       featureId: featureFlagSchema.id,
       environment: z.string().describe("Environment ID"),
@@ -1583,7 +1594,7 @@ server.registerTool(
     }),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
     },
   },
   async ({ featureId, environment, ruleId }) => {
@@ -1719,7 +1730,16 @@ git commit -m "feat: complete Phase 1 — feature flag write tools (5 tools)"
 Create `test/tools/write-tools-experiments.test.ts`:
 
 ```typescript
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+beforeEach(() => {
+  vi.resetModules();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 type RegisteredTool = {
   name: string;
@@ -2692,6 +2712,23 @@ server.registerTool(
         };
       }
 
+      // Check for error states before assuming success
+      if (status !== "success") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatSnapshotResult(
+                experimentId,
+                "error",
+                appOrigin,
+                snapshotId,
+              ),
+            },
+          ],
+        };
+      }
+
       // Fetch fresh results
       const resultsRes = await fetchWithRateLimit(
         `${baseApiUrl}/api/v1/experiments/${experimentId}/results`,
@@ -2785,7 +2822,16 @@ git commit -m "feat: complete Phase 2 — experiment lifecycle tools (5 tools)"
 Create `test/tools/write-tools-metrics.test.ts`:
 
 ```typescript
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+beforeEach(() => {
+  vi.resetModules();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 type RegisteredTool = {
   name: string;
@@ -3063,10 +3109,10 @@ server.registerTool(
         metricType,
         numerator,
       };
-      if (description) payload.description = description;
-      if (denominator) payload.denominator = denominator;
-      if (tags) payload.tags = tags;
-      if (projects) payload.projects = projects;
+      if (description !== undefined) payload.description = description;
+      if (denominator !== undefined) payload.denominator = denominator;
+      if (tags !== undefined) payload.tags = tags;
+      if (projects !== undefined) payload.projects = projects;
       payload.owner = metricOwner || user;
 
       const res = await fetchWithRateLimit(
@@ -3401,15 +3447,40 @@ git add src/tools/features.ts
 git commit -m "chore: update create_force_rule description to reference add_feature_rule"
 ```
 
-- [ ] **Step 5: Version bump**
+- [ ] **Step 5: Update CHANGELOG.md**
+
+Add a new version section at the top of `CHANGELOG.md` with all 14 new tools:
+
+```markdown
+## [next version]
+
+### Added
+
+- `update_feature_flag` — Update properties of an existing feature flag
+- `toggle_feature_flag` — Enable or disable a feature flag per-environment
+- `add_feature_rule` — Add a targeting rule to a specific environment
+- `reorder_feature_rules` — Set rule evaluation order for an environment
+- `remove_feature_rule` — Remove a rule from an environment
+- `update_experiment` — Update experiment properties
+- `start_experiment` — Launch a draft experiment
+- `stop_experiment` — Stop a running experiment, optionally declare winner
+- `archive_experiment` — Archive or unarchive an experiment
+- `refresh_experiment_results` — Trigger fresh analysis snapshot
+- `create_fact_metric` — Create a new fact metric
+- `update_fact_metric` — Update an existing fact metric
+- `list_fact_tables` — List available fact tables
+- `list_fact_metrics` — List fact metrics with full configuration
+```
+
+- [ ] **Step 6: Version bump**
 
 Run: `npm run bump:minor`
 
-This updates `package.json`, `manifest.json`, and `server.json` to the next minor version.
+This updates `package.json`, `manifest.json`, and `server.json` to the next minor version. Then update the `[next version]` placeholder in CHANGELOG.md with the actual version number.
 
-- [ ] **Step 6: Commit version bump**
+- [ ] **Step 7: Commit version bump + changelog**
 
 ```bash
-git add package.json manifest.json server.json
-git commit -m "chore: bump version to $(node -p 'require(\"./package.json\").version')"
+git add package.json manifest.json server.json CHANGELOG.md
+git commit -m "chore: bump version to $(node -p 'require(\"./package.json\").version') with changelog"
 ```
