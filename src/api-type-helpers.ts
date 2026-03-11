@@ -25,7 +25,7 @@ export type ApiResponse<
   TPath extends keyof Paths,
   TMethod extends keyof Paths[TPath],
   // Status code is left unconstrained; aliases should specify a concrete code.
-  TStatus extends number = 200
+  TStatus extends number = 200,
 > = any;
 
 // SDK Connections
@@ -87,6 +87,26 @@ export type GetStaleFeatureResponse =
 // Data sources (used by defaults)
 export type ListDataSourcesResponse =
   Paths["/data-sources"]["get"]["responses"][200]["content"]["application/json"];
+
+// ─── Experiment mutations ───────────────────────────────────────────
+export type UpdateExperimentResponse =
+  Paths["/experiments/{id}"]["post"]["responses"][200]["content"]["application/json"];
+
+// ─── Snapshots ──────────────────────────────────────────────────────
+export type CreateSnapshotResponse =
+  Paths["/experiments/{id}/snapshot"]["post"]["responses"][200]["content"]["application/json"];
+export type GetSnapshotResponse =
+  Paths["/snapshots/{id}"]["get"]["responses"][200]["content"]["application/json"];
+
+// ─── Fact metrics (write) ───────────────────────────────────────────
+export type CreateFactMetricResponse =
+  Paths["/fact-metrics"]["post"]["responses"][200]["content"]["application/json"];
+export type UpdateFactMetricResponse =
+  Paths["/fact-metrics/{id}"]["post"]["responses"][200]["content"]["application/json"];
+
+// ─── Fact tables ────────────────────────────────────────────────────
+export type ListFactTablesResponse =
+  Paths["/fact-tables"]["get"]["responses"][200]["content"]["application/json"];
 
 // Component schema aliases (for formatters that work with single entities or arrays)
 export type Feature = Components["schemas"]["Feature"];
