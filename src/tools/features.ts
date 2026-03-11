@@ -16,6 +16,11 @@ import {
   formatFeatureFlagList,
   formatFeatureFlagDetail,
   formatFeatureFlagCreated,
+  formatFeatureFlagUpdated,
+  formatFeatureFlagToggled,
+  formatFeatureRuleAdded,
+  formatFeatureRulesReordered,
+  formatFeatureRuleRemoved,
   formatForceRuleCreated,
   formatStaleFeatureFlags,
   formatApiError,
@@ -66,7 +71,7 @@ export function registerFeatureTools({
           `${baseApiUrl}/api/v1/features/environments`,
           {
             headers: buildHeaders(apiKey),
-          }
+          },
         );
         await handleResNotOk(envRes);
         const envData = await envRes.json();
@@ -88,7 +93,7 @@ export function registerFeatureTools({
             };
             return acc;
           },
-          {}
+          {},
         ),
         ...(project && { project }),
         ...(customFields && { customFields }),
@@ -115,7 +120,7 @@ export function registerFeatureTools({
                 appOrigin,
                 stub,
                 language,
-                docs
+                docs,
               ),
             },
           ],
@@ -126,10 +131,10 @@ export function registerFeatureTools({
             "Check the id is valid (letters, numbers, _, -, ., :, | only).",
             "A flag with this id may already exist — use get_feature_flags to check.",
             "If scoping to a project, verify the project id with get_projects.",
-          ])
+          ]),
         );
       }
-    }
+    },
   );
 
   /**
@@ -148,13 +153,13 @@ export function registerFeatureTools({
         condition: z
           .string()
           .describe(
-            'MongoDB-style targeting condition. Examples: {"country": "US"}, {"plan": {"$in": ["pro", "enterprise"]}}. Omit to apply to all users.'
+            'MongoDB-style targeting condition. Examples: {"country": "US"}, {"plan": {"$in": ["pro", "enterprise"]}}. Omit to apply to all users.',
           )
           .optional(),
         value: z
           .string()
           .describe(
-            "The value to force when condition matches. Must match the flag's valueType (string, number, boolean, or JSON string)."
+            "The value to force when condition matches. Must match the flag's valueType (string, number, boolean, or JSON string).",
           ),
       }),
       annotations: {
@@ -167,7 +172,7 @@ export function registerFeatureTools({
         const existingFeature = await fetchFeatureFlag(
           baseApiUrl,
           apiKey,
-          featureId
+          featureId,
         );
 
         // Fetch feature defaults first
@@ -186,7 +191,7 @@ export function registerFeatureTools({
         const payload = mergeRuleIntoFeatureFlag(
           existingFeature,
           newRule,
-          defaultEnvironments
+          defaultEnvironments,
         );
 
         const res = await fetchWithRateLimit(
@@ -195,7 +200,7 @@ export function registerFeatureTools({
             method: "POST",
             headers: buildHeaders(apiKey),
             body: JSON.stringify(payload),
-          }
+          },
         );
 
         await handleResNotOk(res);
@@ -213,7 +218,7 @@ export function registerFeatureTools({
                 featureId,
                 stub,
                 language,
-                docs
+                docs,
               ),
             },
           ],
@@ -224,10 +229,10 @@ export function registerFeatureTools({
             `Check that feature flag '${featureId}' exists — use get_feature_flags to verify.`,
             'Ensure the value matches the flag\'s valueType (e.g. "true" for boolean flags).',
             'For condition syntax, use MongoDB-style JSON: {"country": "US"}',
-          ])
+          ]),
         );
       }
-    }
+    },
   );
 
   /**
@@ -256,7 +261,7 @@ export function registerFeatureTools({
             `${baseApiUrl}/api/v1/features/${featureFlagId}`,
             {
               headers: buildHeaders(apiKey),
-            }
+            },
           );
 
           await handleResNotOk(res);
@@ -273,7 +278,7 @@ export function registerFeatureTools({
             formatApiError(error, `fetching feature flag '${featureFlagId}'`, [
               "Check the feature flag id is correct.",
               "Use get_feature_flags without a featureFlagId to list all available flags.",
-            ])
+            ]),
           );
         }
       }
@@ -287,7 +292,7 @@ export function registerFeatureTools({
           limit,
           offset,
           mostRecent,
-          project ? { projectId: project } : undefined
+          project ? { projectId: project } : undefined,
         );
 
         // Reverse features array for mostRecent to show newest-first
@@ -302,10 +307,10 @@ export function registerFeatureTools({
         throw new Error(
           formatApiError(error, "fetching feature flags", [
             "Check that your GB_API_KEY has permission to read features.",
-          ])
+          ]),
         );
       }
-    }
+    },
   );
 
   /**
@@ -321,7 +326,9 @@ export function registerFeatureTools({
         projectId: z
           .string()
           .optional()
-          .describe("Filter by project ID to only return flags in that project."),
+          .describe(
+            "Filter by project ID to only return flags in that project.",
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -336,7 +343,7 @@ export function registerFeatureTools({
           `${baseApiUrl}/api/v1/feature-keys${queryParams}`,
           {
             headers: buildHeaders(apiKey),
-          }
+          },
         );
 
         await handleResNotOk(res);
@@ -355,10 +362,10 @@ export function registerFeatureTools({
         throw new Error(
           formatApiError(error, "fetching feature keys", [
             "Check that your GB_API_KEY has permission to read features.",
-          ])
+          ]),
         );
       }
-    }
+    },
   );
 
   /**
@@ -375,7 +382,7 @@ export function registerFeatureTools({
           .array(z.string())
           .optional()
           .describe(
-            "REQUIRED. One or more feature flag IDs to check (e.g. [\"my-feature\", \"dark-mode\"]). Gather IDs first from the user, from code context, or by using list_feature_keys to get all flag IDs and searching the codebase for those IDs."
+            'REQUIRED. One or more feature flag IDs to check (e.g. ["my-feature", "dark-mode"]). Gather IDs first from the user, from code context, or by using list_feature_keys to get all flag IDs and searching the codebase for those IDs.',
           ),
       }),
       annotations: {
@@ -409,7 +416,7 @@ export function registerFeatureTools({
           `${baseApiUrl}/api/v1/stale-features?ids=${encodeURIComponent(ids)}`,
           {
             headers: buildHeaders(apiKey),
-          }
+          },
         );
 
         await handleResNotOk(res);
@@ -426,10 +433,10 @@ export function registerFeatureTools({
           formatApiError(error, "checking stale features", [
             "Check that the feature IDs are correct.",
             "Check that your GB_API_KEY has permission to read features.",
-          ])
+          ]),
         );
       }
-    }
+    },
   );
 
   /**
@@ -467,12 +474,12 @@ export function registerFeatureTools({
         // Login command
         await runCommand(
           `npx -y growthbook@latest auth login -k ${apiKey} -u ${baseApiUrl} -p default`,
-          currentWorkingDirectory
+          currentWorkingDirectory,
         );
         // Generate types command
         const output = await runCommand(
           `npx -y growthbook@latest features generate-types -u ${baseApiUrl}`,
-          currentWorkingDirectory
+          currentWorkingDirectory,
         );
         return {
           content: [
@@ -486,6 +493,439 @@ export function registerFeatureTools({
       } catch (error: any) {
         throw new Error(`Error generating types: ${error}`);
       }
-    }
+    },
+  );
+
+  /**
+   * Tool: update_feature_flag
+   */
+  server.registerTool(
+    "update_feature_flag",
+    {
+      title: "Update Feature Flag",
+      description:
+        "Updates properties of an existing feature flag. Only the provided fields are changed — omitted fields remain unchanged. Use toggle_feature_flag to enable/disable per-environment, add_feature_rule to add targeting rules, or reorder_feature_rules / remove_feature_rule to manage existing rules.",
+      inputSchema: z.object({
+        featureId: featureFlagSchema.id,
+        description: featureFlagSchema.description.optional(),
+        owner: z.string().optional().describe("Updated owner email"),
+        project: featureFlagSchema.project.optional(),
+        tags: z.array(z.string()).optional().describe("Replace the tags array"),
+        archived: z
+          .boolean()
+          .optional()
+          .describe("Archive (true) or unarchive (false) the flag"),
+        defaultValue: z
+          .string()
+          .optional()
+          .describe("New default value (must match the flag's valueType)"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({
+      featureId,
+      description,
+      owner,
+      project,
+      tags,
+      archived,
+      defaultValue,
+    }) => {
+      try {
+        const payload: Record<string, any> = {};
+        if (description !== undefined) payload.description = description;
+        if (owner !== undefined) payload.owner = owner;
+        if (project !== undefined) payload.project = project;
+        if (tags !== undefined) payload.tags = tags;
+        if (archived !== undefined) payload.archived = archived;
+        if (defaultValue !== undefined) payload.defaultValue = defaultValue;
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/features/${featureId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify(payload),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatFeatureFlagUpdated(data, appOrigin),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `updating feature flag '${featureId}'`, [
+            "Check that the feature flag exists — use get_feature_flags to verify.",
+            "Ensure defaultValue matches the flag's valueType.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: toggle_feature_flag
+   */
+  server.registerTool(
+    "toggle_feature_flag",
+    {
+      title: "Toggle Feature Flag",
+      description:
+        "Enables or disables a feature flag in specific environments. Provide a map of environment names to their desired state (true=ON, false=OFF). Use get_environments to discover available environment names.",
+      inputSchema: z.object({
+        featureId: featureFlagSchema.id,
+        environments: z
+          .record(z.string(), z.boolean())
+          .describe(
+            'Map of environment name to desired state. Example: {"production": true, "staging": false}',
+          ),
+        reason: z
+          .string()
+          .optional()
+          .describe("Audit trail explanation for the toggle (recommended)"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({ featureId, environments, reason }) => {
+      try {
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/features/${featureId}/toggle`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ reason, environments }),
+          },
+        );
+        await handleResNotOk(res);
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatFeatureFlagToggled(featureId, environments),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `toggling feature flag '${featureId}'`, [
+            "Check environment names with get_environments.",
+            "Verify the feature flag exists with get_feature_flags.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: add_feature_rule
+   */
+  server.registerTool(
+    "add_feature_rule",
+    {
+      title: "Add Feature Rule",
+      description:
+        "Adds a targeting rule to a specific environment on a feature flag. Use get_environments to discover environment IDs. For rules across all default environments, use create_force_rule instead. Supports 'force' rules (serve a specific value) and 'rollout' rules (gradual percentage rollout).",
+      inputSchema: z.object({
+        featureId: featureFlagSchema.id,
+        environment: z
+          .string()
+          .describe("Single environment ID (e.g., 'production')"),
+        ruleType: z.enum(["force", "rollout"]).describe("Type of rule to add"),
+        value: z
+          .string()
+          .describe(
+            "Value to serve when rule matches (force) or rollout value",
+          ),
+        condition: z
+          .string()
+          .optional()
+          .describe(
+            'MongoDB-style targeting condition. Example: {"country": "US"}',
+          ),
+        coverage: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("Traffic percentage 0-1 for rollout rules"),
+        hashAttribute: z
+          .string()
+          .optional()
+          .default("id")
+          .describe("Attribute for bucketing rollout users (default: 'id')"),
+        description: z.string().optional().describe("Rule description"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({
+      featureId,
+      environment,
+      ruleType,
+      value,
+      condition,
+      coverage,
+      hashAttribute,
+      description: ruleDescription,
+    }) => {
+      try {
+        const existingFeature = await fetchFeatureFlag(
+          baseApiUrl,
+          apiKey,
+          featureId,
+        );
+        const existingEnvironments = existingFeature?.environments || {};
+
+        const newRule: Record<string, any> = {
+          type: ruleType,
+          value,
+          ...(condition && { condition }),
+          ...(ruleDescription && { description: ruleDescription }),
+        };
+
+        if (ruleType === "rollout") {
+          newRule.coverage = coverage ?? 1;
+          newRule.hashAttribute = hashAttribute || "id";
+        }
+
+        const updatedEnvironments: Record<string, any> = {};
+        for (const [env, config] of Object.entries(existingEnvironments)) {
+          const envConfig = config as Record<string, any>;
+          if (env === environment) {
+            updatedEnvironments[env] = {
+              ...envConfig,
+              rules: [...(envConfig.rules || []), newRule],
+            };
+          } else {
+            updatedEnvironments[env] = envConfig;
+          }
+        }
+
+        if (!updatedEnvironments[environment]) {
+          updatedEnvironments[environment] = {
+            enabled: false,
+            rules: [newRule],
+          };
+        }
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/features/${featureId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ environments: updatedEnvironments }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatFeatureRuleAdded(
+                data,
+                appOrigin,
+                environment,
+                ruleType,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `adding rule to '${featureId}' in ${environment}`,
+            [
+              `Check that feature flag '${featureId}' exists — use get_feature_flags to verify.`,
+              "Check environment name with get_environments.",
+              "Ensure the value matches the flag's valueType.",
+            ],
+          ),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: reorder_feature_rules
+   */
+  server.registerTool(
+    "reorder_feature_rules",
+    {
+      title: "Reorder Feature Rules",
+      description:
+        "Sets the evaluation order of rules for a specific environment on a feature flag. Rules are evaluated top-to-bottom — the first matching rule wins. Use get_feature_flags with featureFlagId to see current rules and their IDs.",
+      inputSchema: z.object({
+        featureId: featureFlagSchema.id,
+        environment: z.string().describe("Environment ID"),
+        ruleIds: z
+          .array(z.string())
+          .describe(
+            "Rule IDs in desired evaluation order. All existing rule IDs for the environment must be included.",
+          ),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({ featureId, environment, ruleIds }) => {
+      try {
+        const existingFeature = await fetchFeatureFlag(
+          baseApiUrl,
+          apiKey,
+          featureId,
+        );
+        const envConfig = existingFeature?.environments?.[environment];
+        if (!envConfig) {
+          throw new Error(
+            `Environment '${environment}' not found on feature flag '${featureId}'.`,
+          );
+        }
+
+        const existingRules = envConfig.rules || [];
+        const ruleMap = new Map(existingRules.map((r: any) => [r.id, r]));
+
+        if (ruleIds.length !== existingRules.length) {
+          throw new Error(
+            `Expected ${existingRules.length} rule IDs but received ${ruleIds.length}. All existing rule IDs for the environment must be included.`,
+          );
+        }
+
+        for (const id of ruleIds) {
+          if (!ruleMap.has(id)) {
+            throw new Error(
+              `Rule '${id}' not found in environment '${environment}'.`,
+            );
+          }
+        }
+
+        const reorderedRules = ruleIds.map((id) => ruleMap.get(id));
+
+        const updatedEnvironments = {
+          ...existingFeature.environments,
+          [environment]: { ...envConfig, rules: reorderedRules },
+        };
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/features/${featureId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ environments: updatedEnvironments }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatFeatureRulesReordered(
+                data,
+                appOrigin,
+                environment,
+                ruleIds,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `reordering rules for '${featureId}' in ${environment}`,
+            [
+              "Use get_feature_flags with the featureFlagId to see current rules and their IDs.",
+              "All existing rule IDs for the environment must be included.",
+            ],
+          ),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: remove_feature_rule
+   */
+  server.registerTool(
+    "remove_feature_rule",
+    {
+      title: "Remove Feature Rule",
+      description:
+        "Removes a specific rule from an environment on a feature flag. This permanently deletes the rule — it cannot be undone (the rule must be manually recreated). Use get_feature_flags with featureFlagId to see current rules and their IDs.",
+      inputSchema: z.object({
+        featureId: featureFlagSchema.id,
+        environment: z.string().describe("Environment ID"),
+        ruleId: z.string().describe("The ID of the rule to remove"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    async ({ featureId, environment, ruleId }) => {
+      try {
+        const existingFeature = await fetchFeatureFlag(
+          baseApiUrl,
+          apiKey,
+          featureId,
+        );
+        const envConfig = existingFeature?.environments?.[environment];
+        if (!envConfig) {
+          throw new Error(
+            `Environment '${environment}' not found on feature flag '${featureId}'.`,
+          );
+        }
+
+        const existingRules = envConfig.rules || [];
+        const filteredRules = existingRules.filter((r: any) => r.id !== ruleId);
+
+        if (filteredRules.length === existingRules.length) {
+          throw new Error(
+            `Rule '${ruleId}' not found in environment '${environment}'.`,
+          );
+        }
+
+        const updatedEnvironments = {
+          ...existingFeature.environments,
+          [environment]: { ...envConfig, rules: filteredRules },
+        };
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/features/${featureId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ environments: updatedEnvironments }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatFeatureRuleRemoved(
+                data,
+                appOrigin,
+                environment,
+                ruleId,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `removing rule '${ruleId}' from '${featureId}' in ${environment}`,
+            [
+              "Use get_feature_flags with the featureFlagId to see current rules and their IDs.",
+            ],
+          ),
+        );
+      }
+    },
   );
 }

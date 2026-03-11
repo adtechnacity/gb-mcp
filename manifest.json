@@ -16,9 +16,7 @@
     "entry_point": "server/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/server/index.js"
-      ],
+      "args": ["${__dirname}/server/index.js"],
       "env": {
         "GB_API_KEY": "${user_config.GB_API_KEY}",
         "GB_EMAIL": "${user_config.GB_EMAIL}",
@@ -99,6 +97,26 @@
     {
       "name": "search_growthbook_docs",
       "description": "Search official GrowthBook documentation for SDK integration, metrics setup, and experimentation best practices."
+    },
+    {
+      "name": "update_feature_flag",
+      "description": "Update properties of an existing feature flag (description, owner, tags, archived, defaultValue)."
+    },
+    {
+      "name": "toggle_feature_flag",
+      "description": "Enable or disable a feature flag in specific environments."
+    },
+    {
+      "name": "add_feature_rule",
+      "description": "Add a targeting rule (force or rollout) to a specific environment on a feature flag."
+    },
+    {
+      "name": "reorder_feature_rules",
+      "description": "Set the evaluation order of rules for a specific environment on a feature flag."
+    },
+    {
+      "name": "remove_feature_rule",
+      "description": "Remove a specific rule from an environment on a feature flag."
     }
   ],
   "prompts": [
@@ -152,12 +170,7 @@
       "sensitive": false
     }
   },
-  "keywords": [
-    "experimentation",
-    "feature flags",
-    "ab testing",
-    "growthbook"
-  ],
+  "keywords": ["experimentation", "feature flags", "ab testing", "growthbook"],
   "license": "MIT",
   "repository": {
     "type": "git",
