@@ -12,10 +12,14 @@ import type {
   ListExperimentsResponse,
   GetExperimentResponse,
   PostExperimentResponse,
+  UpdateExperimentResponse,
   ListMetricsResponse,
   ListFactMetricsResponse,
   GetMetricResponse,
   GetFactMetricResponse,
+  CreateFactMetricResponse,
+  UpdateFactMetricResponse,
+  ListFactTablesResponse,
   Feature,
   GetStaleFeatureResponse,
 } from "./api-type-helpers.js";
@@ -31,7 +35,7 @@ function resolveMetric(metricId: string, metricLookup?: MetricLookup): string {
 
 function resolveMetricList(
   metrics: { metricId: string }[] | undefined,
-  metricLookup?: MetricLookup
+  metricLookup?: MetricLookup,
 ): string {
   if (!metrics?.length) return "none";
   return metrics.map((g) => resolveMetric(g.metricId, metricLookup)).join(", ");
@@ -75,7 +79,7 @@ export function formatEnvironments(data: ListEnvironmentsResponse): string {
   });
 
   return [`**${environments.length} environment(s):**`, "", ...lines].join(
-    "\n"
+    "\n",
   );
 }
 
@@ -117,7 +121,7 @@ export function formatSdkConnections(data: ListSdkConnectionsResponse): string {
   });
 
   return [`**${connections.length} SDK connection(s):**`, "", ...lines].join(
-    "\n"
+    "\n",
   );
 }
 
@@ -139,7 +143,7 @@ export function formatFeatureFlagList(data: ListFeaturesResponse): string {
                       config.rules.length > 1 ? "s" : ""
                     })`
                   : ""
-              }`
+              }`,
           )
           .join(", ")
       : "no environments";
@@ -165,7 +169,7 @@ export function formatFeatureFlagList(data: ListFeaturesResponse): string {
 
 export function formatFeatureFlagDetail(
   data: GetFeatureResponse,
-  appOrigin: string
+  appOrigin: string,
 ): string {
   const f = data.feature;
   if (!f) return "Feature flag not found.";
@@ -197,7 +201,9 @@ export function formatFeatureFlagDetail(
       return `    ${i + 1}. Experiment rule${disabledTag}: experimentId=\`${r.experimentId}\`${desc}${condition}${variations}${schedule}`;
     }
     if (r.type === "experiment") {
-      const trackingKey = r.trackingKey ? `, trackingKey=\`${r.trackingKey}\`` : "";
+      const trackingKey = r.trackingKey
+        ? `, trackingKey=\`${r.trackingKey}\``
+        : "";
       const coverage = r.coverage != null ? `, coverage=${r.coverage}` : "";
       return `    ${i + 1}. Inline experiment${disabledTag}${trackingKey}${coverage}${desc}${condition}${savedGroups}${schedule}`;
     }
@@ -252,7 +258,7 @@ export function formatFeatureFlagCreated(
   appOrigin: string,
   sdkStub: string,
   language: string,
-  docsUrl: string
+  docsUrl: string,
 ): string {
   const f = data.feature;
   const id = f?.id || "unknown";
@@ -275,7 +281,7 @@ export function formatForceRuleCreated(
   featureId: string,
   sdkStub: string,
   language: string,
-  docsUrl: string
+  docsUrl: string,
 ): string {
   const link = generateLinkToGrowthBook(appOrigin, "features", featureId);
 
@@ -287,6 +293,90 @@ export function formatForceRuleCreated(
     sdkStub,
     "",
     `[${language} docs](${docsUrl})`,
+  ].join("\n");
+}
+
+// ─── Feature Flag Write Formatters ──────────────────────────────────
+
+export function formatFeatureFlagUpdated(
+  data: UpdateFeatureResponse,
+  appOrigin: string,
+): string {
+  return [
+    `**Feature flag \`${data.feature?.id}\` updated.**`,
+    "",
+    formatFeatureFlagDetail(data as any, appOrigin),
+  ].join("\n");
+}
+
+export function formatFeatureFlagToggled(
+  featureId: string,
+  environments: Record<string, boolean>,
+): string {
+  const envLines = Object.entries(environments).map(
+    ([env, enabled]) => `- **${env}**: ${enabled ? "ON" : "OFF"}`,
+  );
+  return [`**Feature flag \`${featureId}\` toggled.**`, "", ...envLines].join(
+    "\n",
+  );
+}
+
+export function formatFeatureRuleAdded(
+  data: GetFeatureResponse | UpdateFeatureResponse,
+  appOrigin: string,
+  environment: string,
+  ruleType: string,
+): string {
+  const featureId = "feature" in data ? data.feature?.id : "unknown";
+  const link = generateLinkToGrowthBook(
+    appOrigin,
+    "features",
+    featureId || "unknown",
+  );
+  return [
+    `**${ruleType} rule added to \`${featureId}\` in ${environment}.**`,
+    "",
+    `[View in GrowthBook](${link})`,
+  ].join("\n");
+}
+
+export function formatFeatureRulesReordered(
+  data: GetFeatureResponse | UpdateFeatureResponse,
+  appOrigin: string,
+  environment: string,
+  ruleIds: string[],
+): string {
+  const featureId = "feature" in data ? data.feature?.id : "unknown";
+  const link = generateLinkToGrowthBook(
+    appOrigin,
+    "features",
+    featureId || "unknown",
+  );
+  return [
+    `**Rules reordered for \`${featureId}\` in ${environment}.**`,
+    "",
+    `New order: ${ruleIds.map((id, i) => `${i + 1}. \`${id}\``).join(", ")}`,
+    "",
+    `[View in GrowthBook](${link})`,
+  ].join("\n");
+}
+
+export function formatFeatureRuleRemoved(
+  data: GetFeatureResponse | UpdateFeatureResponse,
+  appOrigin: string,
+  environment: string,
+  ruleId: string,
+): string {
+  const featureId = "feature" in data ? data.feature?.id : "unknown";
+  const link = generateLinkToGrowthBook(
+    appOrigin,
+    "features",
+    featureId || "unknown",
+  );
+  return [
+    `**Rule \`${ruleId}\` removed from \`${featureId}\` in ${environment}.**`,
+    "",
+    `[View in GrowthBook](${link})`,
   ].join("\n");
 }
 
@@ -327,7 +417,7 @@ export function formatExperimentDetail(
     | (GetExperimentResponse & { result?: unknown })
     | GetExperimentResponse["experiment"],
   appOrigin: string,
-  metricLookup?: MetricLookup
+  metricLookup?: MetricLookup,
 ): string {
   const e =
     "experiment" in data && data.experiment
@@ -338,7 +428,10 @@ export function formatExperimentDetail(
   const link = generateLinkToGrowthBook(appOrigin, "experiment", e.id);
   const variations = e.variations
     ? e.variations
-        .map((v) => `${v.name} (key: \`${v.key}\`, variationId: \`${v.variationId}\`)`)
+        .map(
+          (v) =>
+            `${v.name} (key: \`${v.key}\`, variationId: \`${v.variationId}\`)`,
+        )
         .join(", ")
     : "none";
 
@@ -350,10 +443,17 @@ export function formatExperimentDetail(
   if (e.hypothesis) parts.push(`Hypothesis: ${e.hypothesis}`);
   if (e.description) parts.push(`Description: ${e.description}`);
   parts.push(`Variations: ${variations}`);
-  parts.push(`Goal metrics: ${resolveMetricList(e.settings?.goals, metricLookup)}`);
-  const secondary = resolveMetricList(e.settings?.secondaryMetrics, metricLookup);
+  parts.push(
+    `Goal metrics: ${resolveMetricList(e.settings?.goals, metricLookup)}`,
+  );
+  const secondary = resolveMetricList(
+    e.settings?.secondaryMetrics,
+    metricLookup,
+  );
   if (secondary !== "none") parts.push(`Secondary metrics: ${secondary}`);
-  parts.push(`Guardrail metrics: ${resolveMetricList(e.settings?.guardrails, metricLookup)}`);
+  parts.push(
+    `Guardrail metrics: ${resolveMetricList(e.settings?.guardrails, metricLookup)}`,
+  );
   if (e.trackingKey) parts.push(`Tracking key: \`${e.trackingKey}\``);
   if (e.hashAttribute) parts.push(`Hash attribute: \`${e.hashAttribute}\``);
   if (e.project) parts.push(`Project: ${e.project}`);
@@ -362,7 +462,9 @@ export function formatExperimentDetail(
 
   // Linked features
   if (e.linkedFeatures?.length) {
-    parts.push(`Linked features: ${e.linkedFeatures.map((f) => `\`${f}\``).join(", ")}`);
+    parts.push(
+      `Linked features: ${e.linkedFeatures.map((f) => `\`${f}\``).join(", ")}`,
+    );
   }
 
   // Result summary (if experiment has concluded)
@@ -373,7 +475,8 @@ export function formatExperimentDetail(
     if (rs.status) parts.push(`  Status: ${rs.status}`);
     if (rs.winner) parts.push(`  Winner: \`${rs.winner}\``);
     if (rs.conclusions) parts.push(`  Conclusions: ${rs.conclusions}`);
-    if (rs.releasedVariationId) parts.push(`  Released variation: \`${rs.releasedVariationId}\``);
+    if (rs.releasedVariationId)
+      parts.push(`  Released variation: \`${rs.releasedVariationId}\``);
   }
 
   // Phases (traffic allocation history)
@@ -383,21 +486,38 @@ export function formatExperimentDetail(
     for (const [idx, phase] of e.phases.entries()) {
       const dateRange = `${phase.dateStarted || "?"} → ${phase.dateEnded || "ongoing"}`;
       const traffic = phase.trafficSplit?.length
-        ? phase.trafficSplit.map((t) => `${t.variationId}: ${(t.weight * 100).toFixed(0)}%`).join(", ")
+        ? phase.trafficSplit
+            .map((t) => `${t.variationId}: ${(t.weight * 100).toFixed(0)}%`)
+            .join(", ")
         : "even split";
-      const coverageStr = phase.coverage != null ? `, coverage: ${(phase.coverage * 100).toFixed(0)}%` : "";
-      const targeting = phase.targetingCondition ? `\n    Targeting: ${phase.targetingCondition}` : "";
-      parts.push(`  ${idx + 1}. ${phase.name || `Phase ${idx + 1}`} (${dateRange})\n    Traffic: ${traffic}${coverageStr}${targeting}`);
-      if (phase.reasonForStopping) parts.push(`    Stopped: ${phase.reasonForStopping}`);
+      const coverageStr =
+        phase.coverage != null
+          ? `, coverage: ${(phase.coverage * 100).toFixed(0)}%`
+          : "";
+      const targeting = phase.targetingCondition
+        ? `\n    Targeting: ${phase.targetingCondition}`
+        : "";
+      parts.push(
+        `  ${idx + 1}. ${phase.name || `Phase ${idx + 1}`} (${dateRange})\n    Traffic: ${traffic}${coverageStr}${targeting}`,
+      );
+      if (phase.reasonForStopping)
+        parts.push(`    Stopped: ${phase.reasonForStopping}`);
     }
   }
 
   // Bandit-specific settings
   if (e.type === "multi-armed-bandit") {
     const banditParts: string[] = [];
-    if (e.banditScheduleValue) banditParts.push(`schedule: ${e.banditScheduleValue} ${e.banditScheduleUnit || "hours"}`);
-    if (e.banditBurnInValue) banditParts.push(`burn-in: ${e.banditBurnInValue} ${e.banditBurnInUnit || "hours"}`);
-    if (banditParts.length) parts.push(`Bandit settings: ${banditParts.join(", ")}`);
+    if (e.banditScheduleValue)
+      banditParts.push(
+        `schedule: ${e.banditScheduleValue} ${e.banditScheduleUnit || "hours"}`,
+      );
+    if (e.banditBurnInValue)
+      banditParts.push(
+        `burn-in: ${e.banditBurnInValue} ${e.banditBurnInUnit || "hours"}`,
+      );
+    if (banditParts.length)
+      parts.push(`Bandit settings: ${banditParts.join(", ")}`);
   }
 
   parts.push("");
@@ -411,7 +531,7 @@ export function formatExperimentCreated(
   appOrigin: string,
   sdkStub: string | undefined,
   language: string,
-  docsUrl: string
+  docsUrl: string,
 ): string {
   const e = experimentData.experiment;
   const link = generateLinkToGrowthBook(appOrigin, "experiment", e.id);
@@ -434,17 +554,102 @@ export function formatExperimentCreated(
       "**SDK integration:**",
       sdkStub,
       "",
-      `[${language} docs](${docsUrl})`
+      `[${language} docs](${docsUrl})`,
     );
   }
 
   return parts.join("\n");
 }
 
+// ─── Experiment Write Formatters ────────────────────────────────────
+// Note: These formatters accept UpdateExperimentResponse (from POST /experiments/{id})
+// which differs from GetExperimentResponse (GET). We cast to `any` when delegating
+// to formatExperimentDetail since the shared fields (id, name, variations, etc.) overlap.
+
+export function formatExperimentUpdated(
+  data: UpdateExperimentResponse,
+  appOrigin: string,
+): string {
+  return [
+    `**Experiment updated.**`,
+    "",
+    formatExperimentDetail(data as any, appOrigin),
+  ].join("\n");
+}
+
+export function formatExperimentStarted(
+  data: UpdateExperimentResponse,
+  appOrigin: string,
+): string {
+  const e = data.experiment;
+  return [
+    `**Experiment \`${e?.id}\` started.**`,
+    `Status is now **running**.`,
+    "",
+    formatExperimentDetail(data as any, appOrigin),
+  ].join("\n");
+}
+
+export function formatExperimentStopped(
+  data: UpdateExperimentResponse,
+  appOrigin: string,
+  releasedVariationId?: string,
+  reason?: string,
+): string {
+  const e = data.experiment;
+  const parts = [`**Experiment \`${e?.id}\` stopped.**`];
+  if (releasedVariationId) {
+    const winnerName = e?.variations?.find(
+      (v: any) => v.variationId === releasedVariationId,
+    )?.name;
+    parts.push(
+      `Winner: **${winnerName || releasedVariationId}** (\`${releasedVariationId}\`)`,
+    );
+  }
+  if (reason) parts.push(`Reason: ${reason}`);
+  parts.push("");
+  parts.push(formatExperimentDetail(data as any, appOrigin));
+  return parts.join("\n");
+}
+
+export function formatExperimentArchived(
+  experimentId: string,
+  archived: boolean,
+): string {
+  return `**Experiment \`${experimentId}\` ${archived ? "archived" : "unarchived"}.**`;
+}
+
+export function formatSnapshotResult(
+  experimentId: string,
+  status: "success" | "timeout" | "error",
+  appOrigin: string,
+  snapshotId?: string,
+): string {
+  const link = generateLinkToGrowthBook(appOrigin, "experiment", experimentId);
+  if (status === "success") {
+    return [
+      `**Experiment \`${experimentId}\` results refreshed.**`,
+      "",
+      `[View in GrowthBook](${link})`,
+    ].join("\n");
+  }
+  if (status === "timeout") {
+    return [
+      `**Snapshot for \`${experimentId}\` is still processing (timeout).**`,
+      snapshotId ? `Snapshot ID: \`${snapshotId}\` — check back later.` : "",
+      "",
+      `[View in GrowthBook](${link})`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return `**Error refreshing results for \`${experimentId}\`.** [View in GrowthBook](${link})`;
+}
+
 // ─── Metrics ────────────────────────────────────────────────────────
 export function formatMetricsList(
   metricsData: ListMetricsResponse,
-  factMetricData: ListFactMetricsResponse
+  factMetricData: ListFactMetricsResponse,
 ): string {
   const metrics = metricsData.metrics || [];
   const factMetrics = factMetricData.factMetrics || [];
@@ -477,7 +682,7 @@ export function formatMetricsList(
 
   parts.push("");
   parts.push(
-    "Use metric `id` values when configuring experiment goals and guardrails. Fact metrics (ids starting with `fact__`) are recommended over legacy metrics."
+    "Use metric `id` values when configuring experiment goals and guardrails. Fact metrics (ids starting with `fact__`) are recommended over legacy metrics.",
   );
 
   return parts.join("\n");
@@ -488,7 +693,7 @@ export function formatMetricDetail(
     metric?: GetMetricResponse["metric"];
     factMetric?: GetFactMetricResponse["factMetric"];
   },
-  appOrigin: string
+  appOrigin: string,
 ): string {
   const m = data.metric || data.factMetric;
   if (!m) return "Metric not found.";
@@ -500,8 +705,8 @@ export function formatMetricDetail(
   const metricType = isFactMetric
     ? "fact metric"
     : "type" in m
-    ? (m as { type?: string }).type ?? "legacy"
-    : "legacy";
+      ? ((m as { type?: string }).type ?? "legacy")
+      : "legacy";
   return [
     `**Metric: ${m.name}** (id: \`${m.id}\`, type: ${metricType})`,
     m.description ? `Description: ${m.description}` : "",
@@ -513,6 +718,58 @@ export function formatMetricDetail(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+// ─── Fact Metric Write Formatters ───────────────────────────────────
+
+export function formatFactMetricCreated(
+  data: CreateFactMetricResponse,
+  appOrigin: string,
+): string {
+  const m = data.factMetric;
+  const link = generateLinkToGrowthBook(appOrigin, "fact-metrics", m?.id || "");
+  return [
+    `**Fact metric \`${m?.name}\` created.** (id: \`${m?.id}\`, type: ${m?.metricType})`,
+    "",
+    `[View in GrowthBook](${link})`,
+  ].join("\n");
+}
+
+export function formatFactMetricUpdated(
+  data: UpdateFactMetricResponse,
+  appOrigin: string,
+): string {
+  const m = data.factMetric;
+  const link = generateLinkToGrowthBook(appOrigin, "fact-metrics", m?.id || "");
+  return [
+    `**Fact metric \`${m?.id}\` updated.** (${m?.name}, type: ${m?.metricType})`,
+    "",
+    `[View in GrowthBook](${link})`,
+  ].join("\n");
+}
+
+export function formatFactTableList(data: ListFactTablesResponse): string {
+  const tables = (data as any).factTables || [];
+  if (tables.length === 0) {
+    return "No fact tables found. Fact tables must be created in GrowthBook before fact metrics can reference them.";
+  }
+  const lines = tables.map((t: any) => {
+    const desc = t.description ? ` — ${t.description}` : "";
+    return `- **${t.name}** (id: \`${t.id}\`)${desc}\n  Datasource: \`${t.datasource}\``;
+  });
+  return [`**${tables.length} fact table(s):**`, "", ...lines].join("\n");
+}
+
+export function formatFactMetricList(data: ListFactMetricsResponse): string {
+  const metrics = (data as any).factMetrics || [];
+  if (metrics.length === 0) {
+    return "No fact metrics found. Use create_fact_metric to create one.";
+  }
+  const lines = metrics.map((m: any) => {
+    const desc = m.description ? ` — ${m.description}` : "";
+    return `- **${m.name}** (id: \`${m.id}\`, type: ${m.metricType})${desc}`;
+  });
+  return [`**${metrics.length} fact metric(s):**`, "", ...lines].join("\n");
 }
 
 // ─── Defaults ───────────────────────────────────────────────────────
@@ -528,7 +785,7 @@ export function formatDefaults(defaults: any): string {
       defaults.environments?.length
         ? defaults.environments.map((e: string) => `\`${e}\``).join(", ")
         : "none found"
-    }`
+    }`,
   );
 
   if (defaults.name?.length > 0) {
@@ -558,7 +815,7 @@ export function formatDefaults(defaults: any): string {
 
 export function formatStaleFeatureFlags(
   data: GetStaleFeatureResponse,
-  requestedIds: string[]
+  requestedIds: string[],
 ): string {
   const features = data.features || {};
   const foundIds = Object.keys(features);
@@ -567,7 +824,10 @@ export function formatStaleFeatureFlags(
     return "No features found for the given IDs. Check that the feature IDs are correct and your API key has access.";
   }
 
-  const parts: string[] = [`**${foundIds.length} feature flag(s) checked:**`, ""];
+  const parts: string[] = [
+    `**${foundIds.length} feature flag(s) checked:**`,
+    "",
+  ];
 
   let staleCount = 0;
   for (const id of requestedIds) {
@@ -579,14 +839,14 @@ export function formatStaleFeatureFlags(
 
     if (f.neverStale) {
       parts.push(
-        `- **\`${f.featureId}\`**: NOT STALE (stale detection disabled)`
+        `- **\`${f.featureId}\`**: NOT STALE (stale detection disabled)`,
       );
       continue;
     }
 
     if (!f.isStale) {
       parts.push(
-        `- **\`${f.featureId}\`**: NOT STALE${f.staleReason ? ` (${f.staleReason})` : ""}`
+        `- **\`${f.featureId}\`**: NOT STALE${f.staleReason ? ` (${f.staleReason})` : ""}`,
       );
       continue;
     }
@@ -596,7 +856,7 @@ export function formatStaleFeatureFlags(
 
     const envEntries = f.staleByEnv ? Object.entries(f.staleByEnv) : [];
     const envsWithValues = envEntries.filter(
-      ([, e]) => e.evaluatesTo !== undefined
+      ([, e]) => e.evaluatesTo !== undefined,
     );
 
     let replacementValue: string | undefined;
@@ -632,15 +892,17 @@ export function formatStaleFeatureFlags(
 
     if (replacementValue !== undefined) {
       parts.push(
-        `- **\`${f.featureId}\`**: STALE (${f.staleReason}) — replace with: \`${replacementValue}\``
+        `- **\`${f.featureId}\`**: STALE (${f.staleReason}) — replace with: \`${replacementValue}\``,
       );
     } else {
       parts.push(
-        `- **\`${f.featureId}\`**: STALE (${f.staleReason}) — needs manual review`
+        `- **\`${f.featureId}\`**: STALE (${f.staleReason}) — needs manual review`,
       );
     }
     parts.push(`  ${envNote}`);
-    parts.push(`  Search for \`${id}\` in relevant source files to find usages.`);
+    parts.push(
+      `  Search for \`${id}\` in relevant source files to find usages.`,
+    );
     parts.push("");
   }
 
@@ -648,13 +910,13 @@ export function formatStaleFeatureFlags(
   const notFound = requestedIds.filter((id) => !features[id]);
   if (notFound.length > 0) {
     parts.push(
-      `${notFound.length} flag(s) not found: ${notFound.map((id) => `\`${id}\``).join(", ")}`
+      `${notFound.length} flag(s) not found: ${notFound.map((id) => `\`${id}\``).join(", ")}`,
     );
   }
 
   if (staleCount > 0) {
     parts.push(
-      `**${staleCount} flag(s) ready for cleanup.** For each stale flag, find usages with the search patterns above, replace the flag check with the resolved value, and remove dead code branches. Confirm changes with the user before modifying files.`
+      `**${staleCount} flag(s) ready for cleanup.** For each stale flag, find usages with the search patterns above, replace the flag check with the resolved value, and remove dead code branches. Confirm changes with the user before modifying files.`,
     );
   } else {
     parts.push("No stale flags found. All checked features are active.");
@@ -667,7 +929,7 @@ export function formatStaleFeatureFlags(
 export function formatApiError(
   error: unknown,
   context: string,
-  suggestions?: string[]
+  suggestions?: string[],
 ): string {
   const message = error instanceof Error ? error.message : String(error);
 
