@@ -22,6 +22,11 @@ import {
   formatExperimentList,
   formatExperimentDetail,
   formatExperimentCreated,
+  formatExperimentUpdated,
+  formatExperimentStarted,
+  formatExperimentStopped,
+  formatExperimentArchived,
+  formatSnapshotResult,
   formatAttributes,
   formatApiError,
 } from "../../format-responses.js";
@@ -56,7 +61,7 @@ export function registerExperimentTools({
           .enum(["metadata", "summary", "full"])
           .default("metadata")
           .describe(
-            "The mode to use to fetch experiments. Metadata mode returns experiment config without results. Summary mode fetches results and returns pruned key stats for quick analysis. Full mode fetches and returns complete results data. WARNING: Full mode may return large payloads."
+            "The mode to use to fetch experiments. Metadata mode returns experiment config without results. Summary mode fetches results and returns pruned key stats for quick analysis. Full mode fetches and returns complete results data. WARNING: Full mode may return large payloads.",
           ),
         experimentId: z
           .string()
@@ -70,7 +75,7 @@ export function registerExperimentTools({
     },
     async (
       { limit, offset, mostRecent, project, mode, experimentId },
-      extra
+      extra,
     ) => {
       if (experimentId) {
         try {
@@ -78,7 +83,7 @@ export function registerExperimentTools({
             `${baseApiUrl}/api/v1/experiments/${experimentId}`,
             {
               headers: buildHeaders(apiKey),
-            }
+            },
           );
 
           await handleResNotOk(res);
@@ -97,7 +102,7 @@ export function registerExperimentTools({
                   `${baseApiUrl}/api/v1/experiments/${experimentId}/results`,
                   {
                     headers: buildHeaders(apiKey, false),
-                  }
+                  },
                 );
                 await handleResNotOk(resultsRes);
                 const resultsData = await resultsRes.json();
@@ -105,21 +110,35 @@ export function registerExperimentTools({
               } catch (error) {
                 console.error(
                   `Error fetching results for experiment ${experimentId}`,
-                  error
+                  error,
                 );
               }
             }
 
             // Resolve metric IDs to names
             const metricIds = new Set<string>();
-            for (const g of data.experiment.settings?.goals || []) metricIds.add(g.metricId);
-            for (const g of data.experiment.settings?.guardrails || []) metricIds.add(g.metricId);
-            for (const g of data.experiment.settings?.secondaryMetrics || []) metricIds.add(g.metricId);
-            const metricLookup = await getMetricLookup(baseApiUrl, apiKey, metricIds);
+            for (const g of data.experiment.settings?.goals || [])
+              metricIds.add(g.metricId);
+            for (const g of data.experiment.settings?.guardrails || [])
+              metricIds.add(g.metricId);
+            for (const g of data.experiment.settings?.secondaryMetrics || [])
+              metricIds.add(g.metricId);
+            const metricLookup = await getMetricLookup(
+              baseApiUrl,
+              apiKey,
+              metricIds,
+            );
 
             // Multi-block response: curated summary first, raw results second
             const content: { type: "text"; text: string }[] = [
-              { type: "text", text: formatExperimentDetail(dataWithResult, appOrigin, metricLookup) },
+              {
+                type: "text",
+                text: formatExperimentDetail(
+                  dataWithResult,
+                  appOrigin,
+                  metricLookup,
+                ),
+              },
             ];
             if (dataWithResult.result) {
               content.push({
@@ -131,13 +150,20 @@ export function registerExperimentTools({
           }
 
           return {
-            content: [{ type: "text", text: formatExperimentDetail(dataWithResult, appOrigin) }],
+            content: [
+              {
+                type: "text",
+                text: formatExperimentDetail(dataWithResult, appOrigin),
+              },
+            ],
           };
         } catch (error) {
-          throw new Error(formatApiError(error, `fetching experiment '${experimentId}'`, [
-            "Check the experiment ID is correct.",
-            "Use get_experiments without an experimentId to list all available experiments.",
-          ]));
+          throw new Error(
+            formatApiError(error, `fetching experiment '${experimentId}'`, [
+              "Check the experiment ID is correct.",
+              "Use get_experiments without an experimentId to list all available experiments.",
+            ]),
+          );
         }
       }
 
@@ -148,7 +174,7 @@ export function registerExperimentTools({
       const reportProgress = async (
         progress: number,
 
-        message?: string
+        message?: string,
       ) => {
         if (progressToken) {
           await server.server.notification({
@@ -173,15 +199,17 @@ export function registerExperimentTools({
           limit,
           offset,
           mostRecent,
-          project ? { projectId: project } : undefined
+          project ? { projectId: project } : undefined,
         )) as ListExperimentsResponse;
 
-        let experiments: Experiment[] = (data.experiments as Experiment[]) || [];
+        let experiments: Experiment[] =
+          (data.experiments as Experiment[]) || [];
 
         // Reverse experiments array for mostRecent to show newest-first
         if (mostRecent && offset === 0 && Array.isArray(experiments)) {
           experiments = experiments.reverse();
-          data.experiments = experiments as ListExperimentsResponse["experiments"];
+          data.experiments =
+            experiments as ListExperimentsResponse["experiments"];
         }
 
         if (mode === "full" || mode === "summary") {
@@ -196,7 +224,7 @@ export function registerExperimentTools({
                 `${baseApiUrl}/api/v1/experiments/${experiment.id}/results`,
                 {
                   headers: buildHeaders(apiKey, false),
-                }
+                },
               );
               await handleResNotOk(resultsRes);
               const resultsData = await resultsRes.json();
@@ -204,7 +232,7 @@ export function registerExperimentTools({
             } catch (error) {
               console.error(
                 `Error fetching results for experiment ${experiment.id} (${experiment.name})`,
-                error
+                error,
               );
             }
           }
@@ -215,7 +243,7 @@ export function registerExperimentTools({
             experiments,
             baseApiUrl,
             apiKey,
-            reportProgress
+            reportProgress,
           );
           const summaryExperimentsWithPagination = {
             summary: summaryExperiments,
@@ -248,11 +276,13 @@ export function registerExperimentTools({
           content: [{ type: "text", text: formatExperimentList(data) }],
         };
       } catch (error) {
-        throw new Error(formatApiError(error, "fetching experiments", [
-          "Check that your GB_API_KEY has permission to read experiments.",
-        ]));
+        throw new Error(
+          formatApiError(error, "fetching experiments", [
+            "Check that your GB_API_KEY has permission to read experiments.",
+          ]),
+        );
       }
-    }
+    },
   );
 
   /**
@@ -278,7 +308,7 @@ export function registerExperimentTools({
           `${baseApiUrl}/api/v1/attributes?${queryParams.toString()}`,
           {
             headers: buildHeaders(apiKey),
-          }
+          },
         );
 
         await handleResNotOk(res);
@@ -288,11 +318,13 @@ export function registerExperimentTools({
           content: [{ type: "text", text: formatAttributes(data) }],
         };
       } catch (error) {
-        throw new Error(formatApiError(error, "fetching attributes", [
-          "Check that your GB_API_KEY has permission to read attributes.",
-        ]));
+        throw new Error(
+          formatApiError(error, "fetching attributes", [
+            "Check that your GB_API_KEY has permission to read attributes.",
+          ]),
+        );
       }
-    }
+    },
   );
 
   /**
@@ -308,14 +340,14 @@ export function registerExperimentTools({
         name: z
           .string()
           .describe(
-            "Experiment name. Base name off the examples from get_defaults. If none are available, use a short, descriptive name that captures the essence of the experiment."
+            "Experiment name. Base name off the examples from get_defaults. If none are available, use a short, descriptive name that captures the essence of the experiment.",
           ),
         description: z.string().optional().describe("Experiment description."),
         hypothesis: z
           .string()
           .optional()
           .describe(
-            "Experiment hypothesis. Base hypothesis off the examples from get_defaults. If none are available, use a falsifiable statement about what will happen if the experiment succeeds or fails."
+            "Experiment hypothesis. Base hypothesis off the examples from get_defaults. If none are available, use a falsifiable statement about what will happen if the experiment succeeds or fails.",
           ),
         valueType: z
           .enum(["string", "number", "boolean", "json"])
@@ -326,7 +358,7 @@ export function registerExperimentTools({
               name: z
                 .string()
                 .describe(
-                  "Variation name. Base name off the examples from get_defaults. If none are available, use a short, descriptive name that captures the essence of the variation."
+                  "Variation name. Base name off the examples from get_defaults. If none are available, use a short, descriptive name that captures the essence of the variation.",
                 ),
               value: z
                 .union([
@@ -336,12 +368,12 @@ export function registerExperimentTools({
                   z.record(z.string(), z.any()),
                 ])
                 .describe(
-                  "The value of this variation. Must match the specified valueType: provide actual booleans (true/false) not strings, actual numbers, strings, or valid JSON objects."
+                  "The value of this variation. Must match the specified valueType: provide actual booleans (true/false) not strings, actual numbers, strings, or valid JSON objects.",
                 ),
-            })
+            }),
           )
           .describe(
-            'Array of experiment variations. Each has a name (displayed in GrowthBook UI) and value (what users receive). The first variation should be the control/default. Example: [{name: "Control", value: false}, {name: "Treatment", value: true}]'
+            'Array of experiment variations. Each has a name (displayed in GrowthBook UI) and value (what users receive). The first variation should be the control/default. Example: [{name: "Control", value: false}, {name: "Treatment", value: true}]',
           ),
         project: z
           .string()
@@ -353,18 +385,18 @@ export function registerExperimentTools({
         fileExtension: z
           .enum(SUPPORTED_FILE_EXTENSIONS)
           .describe(
-            "The extension of the current file. If it's unclear, ask the user."
+            "The extension of the current file. If it's unclear, ask the user.",
           ),
         confirmedDefaultsReviewed: z
           .boolean()
           .describe(
-            "Set to true to confirm you have called get_defaults and reviewed the output to guide these parameters."
+            "Set to true to confirm you have called get_defaults and reviewed the output to guide these parameters.",
           ),
         customFields: z
           .record(z.string(), z.string())
           .optional()
           .describe(
-            "Custom field values as key-value pairs. Keys are custom field IDs, values are string representations (e.g. {\"priority\": \"high\", \"team\": \"growth\"})."
+            'Custom field values as key-value pairs. Keys are custom field IDs, values are string representations (e.g. {"priority": "high", "team": "growth"}).',
           ),
       }),
       annotations: {
@@ -414,7 +446,7 @@ export function registerExperimentTools({
           (variation: { name: string }, idx: number) => ({
             key: idx.toString(),
             name: variation.name,
-          })
+          }),
         ),
         ...(project && { project }),
         ...(customFields && { customFields }),
@@ -427,7 +459,7 @@ export function registerExperimentTools({
             method: "POST",
             headers: buildHeaders(apiKey),
             body: JSON.stringify(experimentPayload),
-          }
+          },
         );
 
         await handleResNotOk(experimentRes);
@@ -441,7 +473,7 @@ export function registerExperimentTools({
           const existingFeature = await fetchFeatureFlag(
             baseApiUrl,
             apiKey,
-            featureId
+            featureId,
           );
 
           // Create new experiment-ref rule
@@ -452,7 +484,7 @@ export function registerExperimentTools({
               (expVariation: { variationId: string }, idx: number) => ({
                 value: stringifyValue(variations[idx].value),
                 variationId: expVariation.variationId,
-              })
+              }),
             ),
           };
 
@@ -460,7 +492,7 @@ export function registerExperimentTools({
           const flagPayload = mergeRuleIntoFeatureFlag(
             existingFeature,
             newRule,
-            experimentDefaults.environments
+            experimentDefaults.environments,
           );
 
           const flagRes = await fetchWithRateLimit(
@@ -469,7 +501,7 @@ export function registerExperimentTools({
               method: "POST",
               headers: buildHeaders(apiKey),
               body: JSON.stringify(flagPayload),
-            }
+            },
           );
 
           await handleResNotOk(flagRes);
@@ -480,15 +512,465 @@ export function registerExperimentTools({
         const { stub, docs, language } = getDocsMetadata(fileExtension);
 
         return {
-          content: [{ type: "text", text: formatExperimentCreated(experimentData, appOrigin, featureId ? stub : undefined, language, docs) }],
+          content: [
+            {
+              type: "text",
+              text: formatExperimentCreated(
+                experimentData,
+                appOrigin,
+                featureId ? stub : undefined,
+                language,
+                docs,
+              ),
+            },
+          ],
         };
       } catch (error) {
-        throw new Error(formatApiError(error, `creating experiment '${name}'`, [
-          "Call get_defaults first and use the returned datasource/assignment query IDs.",
-          "If linking to a feature flag, verify the flag exists with get_feature_flags.",
-          "Check that variation values match the specified valueType.",
-        ]));
+        throw new Error(
+          formatApiError(error, `creating experiment '${name}'`, [
+            "Call get_defaults first and use the returned datasource/assignment query IDs.",
+            "If linking to a feature flag, verify the flag exists with get_feature_flags.",
+            "Check that variation values match the specified valueType.",
+          ]),
+        );
       }
-    }
+    },
+  );
+
+  /**
+   * Tool: update_experiment
+   */
+  server.registerTool(
+    "update_experiment",
+    {
+      title: "Update Experiment",
+      description:
+        "Updates properties of an existing experiment. Only the provided fields are changed. For lifecycle changes, use start_experiment, stop_experiment, or archive_experiment instead.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        name: z.string().optional().describe("Updated name"),
+        description: z.string().optional().describe("Updated description"),
+        hypothesis: z.string().optional().describe("Updated hypothesis"),
+        tags: z.array(z.string()).optional().describe("Replace tags"),
+        owner: z.string().optional().describe("Owner email"),
+        project: z.string().optional().describe("Move to project"),
+        metrics: z.array(z.string()).optional().describe("Goal metric IDs"),
+        guardrailMetrics: z
+          .array(z.string())
+          .optional()
+          .describe("Guardrail metric IDs"),
+        secondaryMetrics: z
+          .array(z.string())
+          .optional()
+          .describe("Secondary metric IDs"),
+        activationMetric: z
+          .string()
+          .optional()
+          .describe("Activation metric ID"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({ experimentId, ...fields }) => {
+      try {
+        const payload: Record<string, any> = {};
+        for (const [key, value] of Object.entries(fields)) {
+          if (value !== undefined) payload[key] = value;
+        }
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify(payload),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentUpdated(data, appOrigin),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `updating experiment '${experimentId}'`, [
+            "Check the experiment ID is correct.",
+            "Use get_experiments to list available experiments.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: archive_experiment
+   */
+  server.registerTool(
+    "archive_experiment",
+    {
+      title: "Archive Experiment",
+      description:
+        "Archives or unarchives an experiment (soft delete). Archived experiments are hidden from default views but can be restored.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        archived: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Set to true to archive, false to unarchive (default: true)",
+          ),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({ experimentId, archived: archivedInput }) => {
+      const archived = archivedInput ?? true;
+      try {
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ archived }),
+          },
+        );
+        await handleResNotOk(res);
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentArchived(experimentId, archived),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `${archived ? "archiving" : "unarchiving"} experiment '${experimentId}'`,
+            ["Check the experiment ID is correct."],
+          ),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: start_experiment
+   */
+  server.registerTool(
+    "start_experiment",
+    {
+      title: "Start Experiment",
+      description:
+        "Launches a draft experiment into 'running' status. The experiment must be in 'draft' status. Use get_experiments to check status first. Use update_experiment to configure metrics before launching.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        coverage: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .default(1.0)
+          .describe("Traffic percentage 0-1 (default: 1.0)"),
+        trafficSplit: z
+          .array(
+            z.object({
+              variationId: z.string(),
+              weight: z.number(),
+            }),
+          )
+          .optional()
+          .describe(
+            "Custom traffic split. Defaults to equal split across all variations.",
+          ),
+        targetingCondition: z
+          .string()
+          .optional()
+          .describe("MongoDB-style targeting for experiment entry"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({ experimentId, coverage, trafficSplit, targetingCondition }) => {
+      try {
+        const getRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          { headers: buildHeaders(apiKey) },
+        );
+        await handleResNotOk(getRes);
+        const getData = await getRes.json();
+        const experiment = getData.experiment;
+
+        if (experiment.status !== "draft") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Cannot start experiment — current status is '${experiment.status}'. Only 'draft' experiments can be started. Use get_experiments to check experiment status.`,
+              },
+            ],
+          };
+        }
+
+        const split =
+          trafficSplit ||
+          experiment.variations.map((v: any) => ({
+            variationId: v.variationId,
+            weight: 1 / experiment.variations.length,
+          }));
+
+        const newPhase = {
+          name: "Phase 1",
+          dateStarted: new Date().toISOString(),
+          coverage: coverage ?? 1.0,
+          trafficSplit: split,
+          ...(targetingCondition && { targetingCondition }),
+        };
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({
+              status: "running",
+              phases: [newPhase],
+            }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentStarted(data, appOrigin),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `starting experiment '${experimentId}'`, [
+            "The experiment must be in 'draft' status.",
+            "Use get_experiments to check the current status.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: stop_experiment
+   */
+  server.registerTool(
+    "stop_experiment",
+    {
+      title: "Stop Experiment",
+      description:
+        "Stops a running experiment. To declare a winner, provide the releasedVariationId — use get_experiments with the experimentId first to see available variation IDs and their names.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        releasedVariationId: z
+          .string()
+          .optional()
+          .describe(
+            "Variation ID to declare as winner. Use get_experiments to find variation IDs.",
+          ),
+        reason: z
+          .string()
+          .optional()
+          .describe("Why the experiment was stopped"),
+        excludeFromPayload: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Remove from SDK payloads after stopping (default: false)"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({
+      experimentId,
+      releasedVariationId,
+      reason,
+      excludeFromPayload,
+    }) => {
+      try {
+        const getRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          { headers: buildHeaders(apiKey) },
+        );
+        await handleResNotOk(getRes);
+        const getData = await getRes.json();
+        const experiment = getData.experiment;
+
+        if (experiment.status !== "running") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Cannot stop experiment — current status is '${experiment.status}'. Only 'running' experiments can be stopped. Use get_experiments to check experiment status.`,
+              },
+            ],
+          };
+        }
+
+        const phases = [...(experiment.phases || [])];
+        if (phases.length > 0) {
+          const lastPhase = { ...phases[phases.length - 1] };
+          lastPhase.dateEnded = new Date().toISOString();
+          if (reason) lastPhase.reasonForStopping = reason;
+          phases[phases.length - 1] = lastPhase;
+        }
+
+        const payload: Record<string, any> = { status: "stopped", phases };
+        if (releasedVariationId)
+          payload.releasedVariationId = releasedVariationId;
+        if (excludeFromPayload) payload.excludeFromPayload = excludeFromPayload;
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify(payload),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentStopped(
+                data,
+                appOrigin,
+                releasedVariationId,
+                reason,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `stopping experiment '${experimentId}'`, [
+            "The experiment must be in 'running' status.",
+            "Use get_experiments to check the current status and find variation IDs.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: refresh_experiment_results
+   */
+  server.registerTool(
+    "refresh_experiment_results",
+    {
+      title: "Refresh Experiment Results",
+      description:
+        "Triggers a fresh analysis snapshot for an experiment. Polls for completion and returns the latest results. Safe to call multiple times.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+      }),
+      annotations: { readOnlyHint: false, idempotentHint: true },
+    },
+    async ({ experimentId }) => {
+      try {
+        const snapshotRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}/snapshot`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ triggeredBy: "manual" }),
+          },
+        );
+        await handleResNotOk(snapshotRes);
+        const snapshotData = await snapshotRes.json();
+        const snapshotId = snapshotData.snapshot?.id;
+
+        if (!snapshotId) {
+          throw new Error("No snapshot ID returned from the API.");
+        }
+
+        const delays = [1000, 2000, 4000, 8000, 16000];
+        let status = "running";
+
+        for (const delay of delays) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+
+          const pollRes = await fetchWithRateLimit(
+            `${baseApiUrl}/api/v1/snapshots/${snapshotId}`,
+            { headers: buildHeaders(apiKey) },
+          );
+          await handleResNotOk(pollRes);
+          const pollData = await pollRes.json();
+          status = pollData.snapshot?.status || "unknown";
+
+          if (status !== "running") break;
+        }
+
+        if (status === "running") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatSnapshotResult(
+                  experimentId,
+                  "timeout",
+                  appOrigin,
+                  snapshotId,
+                ),
+              },
+            ],
+          };
+        }
+
+        if (status !== "success") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatSnapshotResult(
+                  experimentId,
+                  "error",
+                  appOrigin,
+                  snapshotId,
+                ),
+              },
+            ],
+          };
+        }
+
+        const resultsRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}/results`,
+          { headers: buildHeaders(apiKey, false) },
+        );
+        await handleResNotOk(resultsRes);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatSnapshotResult(experimentId, "success", appOrigin),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `refreshing results for experiment '${experimentId}'`,
+            [
+              "Check the experiment ID is correct.",
+              "The experiment must have been running to have results.",
+            ],
+          ),
+        );
+      }
+    },
   );
 }

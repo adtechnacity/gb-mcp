@@ -79,6 +79,26 @@
       "description": "Create a new A/B test experiment. Call get_defaults first to review naming conventions. If testing a feature flag, provide the featureId or create the flag first."
     },
     {
+      "name": "update_experiment",
+      "description": "Update properties of an existing experiment (name, description, hypothesis, metrics, tags)."
+    },
+    {
+      "name": "start_experiment",
+      "description": "Launch a draft experiment into running status with traffic allocation."
+    },
+    {
+      "name": "stop_experiment",
+      "description": "Stop a running experiment, optionally declaring a winning variation."
+    },
+    {
+      "name": "archive_experiment",
+      "description": "Archive or unarchive an experiment (soft delete)."
+    },
+    {
+      "name": "refresh_experiment_results",
+      "description": "Trigger a fresh analysis snapshot for an experiment and return results."
+    },
+    {
       "name": "get_metrics",
       "description": "List metrics in GrowthBook. Metrics measure experiment success. Includes both fact metrics (modern) and legacy metrics."
     },
