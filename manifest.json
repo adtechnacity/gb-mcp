@@ -137,6 +137,22 @@
     {
       "name": "remove_feature_rule",
       "description": "Remove a specific rule from an environment on a feature flag."
+    },
+    {
+      "name": "create_fact_metric",
+      "description": "Create a new fact metric for measuring experiment success."
+    },
+    {
+      "name": "update_fact_metric",
+      "description": "Update an existing fact metric."
+    },
+    {
+      "name": "list_fact_tables",
+      "description": "List available fact tables (SQL data sources for fact metrics)."
+    },
+    {
+      "name": "list_fact_metrics",
+      "description": "List fact metrics with full configuration details."
     }
   ],
   "prompts": [
