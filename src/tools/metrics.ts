@@ -161,50 +161,60 @@ export function registerMetricsTools({
       title: "Create Fact Metric",
       description:
         "Creates a new fact metric. Fact metrics are the modern metric type in GrowthBook, recommended for new setups. Use list_fact_tables to discover available fact table IDs.",
-      inputSchema: z.object({
-        name: z.string().describe("Metric name"),
-        description: z.string().optional().describe("Description"),
-        metricType: z
-          .enum([
-            "proportion",
-            "mean",
-            "quantile",
-            "ratio",
-            "retention",
-            "dailyParticipation",
-          ])
-          .describe("Type of metric"),
-        numerator: z
-          .object({
-            factTableId: z.string().describe("Fact table ID"),
-            column: z
-              .string()
-              .optional()
-              .describe("Column name (for mean/quantile metrics)"),
-            filters: z
-              .array(z.string())
-              .optional()
-              .describe("Filter IDs to apply"),
-          })
-          .describe("Numerator configuration"),
-        denominator: z
-          .object({
-            factTableId: z.string().describe("Fact table ID"),
-            column: z.string().optional().describe("Column name"),
-            filters: z
-              .array(z.string())
-              .optional()
-              .describe("Filter IDs to apply"),
-          })
-          .optional()
-          .describe("Denominator configuration (required for ratio metrics)"),
-        tags: z.array(z.string()).optional().describe("Tags"),
-        projects: z.array(z.string()).optional().describe("Project IDs"),
-        owner: z
-          .string()
-          .optional()
-          .describe("Owner email (defaults to current user)"),
-      }),
+      inputSchema: z
+        .object({
+          name: z.string().describe("Metric name"),
+          description: z.string().optional().describe("Description"),
+          metricType: z
+            .enum([
+              "proportion",
+              "mean",
+              "quantile",
+              "ratio",
+              "retention",
+              "dailyParticipation",
+            ])
+            .describe("Type of metric"),
+          numerator: z
+            .object({
+              factTableId: z.string().describe("Fact table ID"),
+              column: z
+                .string()
+                .optional()
+                .describe("Column name (for mean/quantile metrics)"),
+              filters: z
+                .array(z.string())
+                .optional()
+                .describe("Filter IDs to apply"),
+            })
+            .describe("Numerator configuration"),
+          denominator: z
+            .object({
+              factTableId: z.string().describe("Fact table ID"),
+              column: z.string().optional().describe("Column name"),
+              filters: z
+                .array(z.string())
+                .optional()
+                .describe("Filter IDs to apply"),
+            })
+            .optional()
+            .describe("Denominator configuration (required for ratio metrics)"),
+          tags: z.array(z.string()).optional().describe("Tags"),
+          projects: z.array(z.string()).optional().describe("Project IDs"),
+          owner: z
+            .string()
+            .optional()
+            .describe("Owner email (defaults to current user)"),
+        })
+        .superRefine((value, ctx) => {
+          if (value.metricType === "ratio" && !value.denominator) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["denominator"],
+              message: "denominator is required when metricType is 'ratio'",
+            });
+          }
+        }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,

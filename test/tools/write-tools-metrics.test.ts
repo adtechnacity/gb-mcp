@@ -124,6 +124,8 @@ describe("update_fact_metric", () => {
     expect(res.content[0].text).toContain("updated");
     const postCall = calls.find((c) => c.url.includes("fact__conv"));
     expect(postCall).toBeTruthy();
+    const body = JSON.parse(postCall!.body!);
+    expect(body).toEqual({ name: "Updated Name" });
   });
 });
 

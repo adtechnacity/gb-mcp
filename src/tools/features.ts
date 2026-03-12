@@ -788,14 +788,19 @@ export function registerFeatureTools({
 
         const existingRules = envConfig.rules || [];
         const ruleMap = new Map(existingRules.map((r: any) => [r.id, r]));
+        const uniqueRuleIds = new Set(ruleIds);
 
-        if (ruleIds.length !== existingRules.length) {
+        if (uniqueRuleIds.size !== ruleIds.length) {
+          throw new Error("Duplicate rule IDs are not allowed.");
+        }
+
+        if (uniqueRuleIds.size !== existingRules.length) {
           throw new Error(
             `Expected ${existingRules.length} rule IDs but received ${ruleIds.length}. All existing rule IDs for the environment must be included.`,
           );
         }
 
-        for (const id of ruleIds) {
+        for (const id of uniqueRuleIds) {
           if (!ruleMap.has(id)) {
             throw new Error(
               `Rule '${id}' not found in environment '${environment}'.`,
@@ -803,7 +808,7 @@ export function registerFeatureTools({
           }
         }
 
-        const reorderedRules = ruleIds.map((id) => ruleMap.get(id));
+        const reorderedRules = ruleIds.map((id) => ruleMap.get(id)!);
 
         const updatedEnvironments = {
           ...existingFeature.environments,

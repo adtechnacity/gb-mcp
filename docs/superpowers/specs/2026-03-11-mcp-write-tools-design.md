@@ -180,7 +180,7 @@ Sets the evaluation order of rules for a specific environment on a feature flag.
 Removes a specific rule from an environment on a feature flag.
 
 **API:** POST `/api/v1/features/{id}` (feature update)
-**Annotations:** `readOnlyHint: false`, `destructiveHint: false`
+**Annotations:** `readOnlyHint: false`, `destructiveHint: true`
 
 **Input Schema:**
 

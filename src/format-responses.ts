@@ -755,7 +755,8 @@ export function formatFactTableList(data: ListFactTablesResponse): string {
   }
   const lines = tables.map((t: any) => {
     const desc = t.description ? ` — ${t.description}` : "";
-    return `- **${t.name}** (id: \`${t.id}\`)${desc}\n  Datasource: \`${t.datasource}\``;
+    const sql = t.sql ? `\n  SQL: \`${t.sql.replace(/\n/g, " ").trim()}\`` : "";
+    return `- **${t.name}** (id: \`${t.id}\`)${desc}\n  Datasource: \`${t.datasource}\`${sql}`;
   });
   return [`**${tables.length} fact table(s):**`, "", ...lines].join("\n");
 }
@@ -767,7 +768,14 @@ export function formatFactMetricList(data: ListFactMetricsResponse): string {
   }
   const lines = metrics.map((m: any) => {
     const desc = m.description ? ` — ${m.description}` : "";
-    return `- **${m.name}** (id: \`${m.id}\`, type: ${m.metricType})${desc}`;
+    let bindings = "";
+    if (m.numerator) {
+      bindings += `\n  Numerator: \`${m.numerator.factTableId}\`${m.numerator.column ? ` (column: \`${m.numerator.column}\`)` : ""}`;
+    }
+    if (m.denominator) {
+      bindings += `\n  Denominator: \`${m.denominator.factTableId}\`${m.denominator.column ? ` (column: \`${m.denominator.column}\`)` : ""}`;
+    }
+    return `- **${m.name}** (id: \`${m.id}\`, type: ${m.metricType})${desc}${bindings}`;
   });
   return [`**${metrics.length} fact metric(s):**`, "", ...lines].join("\n");
 }

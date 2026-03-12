@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 - `remove_feature_rule` — Remove a rule from an environment
 - `update_experiment` — Update experiment properties
 - `start_experiment` — Launch a draft experiment
-- `stop_experiment` — Stop a running experiment, optionally declare winner
+- `stop_experiment` — Stop a running experiment, optionally declare a winner
 - `archive_experiment` — Archive or unarchive an experiment
 - `refresh_experiment_results` — Trigger fresh analysis snapshot
 - `create_fact_metric` — Create a new fact metric

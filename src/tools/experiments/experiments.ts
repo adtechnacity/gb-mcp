@@ -722,6 +722,41 @@ export function registerExperimentTools({
             weight: 1 / experiment.variations.length,
           }));
 
+        if (split.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Cannot start an experiment with no variations.",
+              },
+            ],
+          };
+        }
+
+        const validVariationIds = new Set(
+          experiment.variations.map((v: any) => v.variationId),
+        );
+        const uniqueSplitIds = new Set(split.map((v: any) => v.variationId));
+        const totalWeight = split.reduce(
+          (sum: number, v: any) => sum + v.weight,
+          0,
+        );
+
+        if (
+          uniqueSplitIds.size !== experiment.variations.length ||
+          [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
+          Math.abs(totalWeight - 1) > 1e-6
+        ) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Invalid trafficSplit. Provide each variation exactly once and ensure the weights sum to 1.",
+              },
+            ],
+          };
+        }
+
         const newPhase = {
           name: "Phase 1",
           dateStarted: new Date().toISOString(),
@@ -950,12 +985,20 @@ export function registerExperimentTools({
           { headers: buildHeaders(apiKey, false) },
         );
         await handleResNotOk(resultsRes);
+        const resultsData = await resultsRes.json();
 
         return {
           content: [
             {
               type: "text",
               text: formatSnapshotResult(experimentId, "success", appOrigin),
+            },
+            {
+              type: "text",
+              text:
+                "```json\n" +
+                JSON.stringify(resultsData.result, null, 2) +
+                "\n```",
             },
           ],
         };
