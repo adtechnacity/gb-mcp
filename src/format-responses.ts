@@ -743,9 +743,10 @@ export function formatFactMetricUpdated(
   appOrigin: string,
 ): string {
   const m = data.factMetric;
-  const link = generateLinkToGrowthBook(appOrigin, "fact-metrics", m?.id || "");
+  if (!m) return "Fact metric updated, but details unavailable.";
+  const link = generateLinkToGrowthBook(appOrigin, "fact-metrics", m.id || "");
   return [
-    `**Fact metric \`${m?.id}\` updated.** (${m?.name}, type: ${m?.metricType})`,
+    `**Fact metric \`${m.id}\` updated.** (${m.name}, type: ${m.metricType})`,
     "",
     `[View in GrowthBook](${link})`,
   ].join("\n");

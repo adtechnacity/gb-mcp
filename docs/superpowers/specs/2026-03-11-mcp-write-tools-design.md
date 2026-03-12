@@ -337,8 +337,8 @@ Triggers a fresh analysis snapshot for an experiment and returns the results.
 
 1. POST to `/api/v1/experiments/{id}/snapshot` with `{ triggeredBy: "manual" }`
 2. Get the snapshot ID from the response
-3. Poll GET `/api/v1/snapshots/{snapshotId}` with exponential backoff (1s, 2s, 4s, 8s, 16s) until snapshot status indicates completion (check for `status !== "running"` rather than specific values, since the API schema does not enumerate status values), or timeout after 31s
-4. Check the snapshot status: if it indicates an error state, return an error message with the snapshot ID and status. If successful, fetch and return fresh experiment results via `/experiments/{id}/results`
+3. Poll GET `/api/v1/snapshots/{snapshotId}` with exponential backoff (1s, 2s, 4s, 8s, 16s) until `status !== "running"`, or timeout after 31s. Known statuses: `"running"` (in-progress), `"success"` (completed), `"error"` (failed). Treat any unrecognized non-running status as requiring user attention.
+4. If status is `"success"`, fetch and return fresh experiment results via `/experiments/{id}/results`. If status is `"error"` or unrecognized, return an error message with the snapshot ID and status.
 5. If still running after timeout, return the snapshot ID and tell the agent to check back later
 
 ---
@@ -464,6 +464,8 @@ export type UpdateFactMetricResponse =
 // Fact tables (read-only)
 export type ListFactTablesResponse =
   Paths["/fact-tables"]["get"]["responses"][200]["content"]["application/json"];
+export type ListFactMetricsResponse =
+  Paths["/fact-metrics"]["get"]["responses"][200]["content"]["application/json"];
 ```
 
 #### New Formatters (`src/format-responses.ts`)
@@ -514,6 +516,8 @@ annotations: {
   destructiveHint: false, // soft operations only
 }
 ```
+
+**Exception:** `remove_feature_rule` uses `destructiveHint: true` because removing a rule is a permanent deletion.
 
 The `refresh_experiment_results` tool additionally gets:
 
