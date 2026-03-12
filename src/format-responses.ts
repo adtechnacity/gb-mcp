@@ -582,8 +582,9 @@ export function formatExperimentStarted(
   appOrigin: string,
 ): string {
   const e = data.experiment;
+  if (!e?.id) return "Experiment started, but details unavailable.";
   return [
-    `**Experiment \`${e?.id}\` started.**`,
+    `**Experiment \`${e.id}\` started.**`,
     `Status is now **running**.`,
     "",
     formatExperimentDetail(data as any, appOrigin),
@@ -597,7 +598,8 @@ export function formatExperimentStopped(
   reason?: string,
 ): string {
   const e = data.experiment;
-  const parts = [`**Experiment \`${e?.id}\` stopped.**`];
+  if (!e?.id) return "Experiment stopped, but details unavailable.";
+  const parts = [`**Experiment \`${e.id}\` stopped.**`];
   if (releasedVariationId) {
     const winnerName = e?.variations?.find(
       (v: any) => v.variationId === releasedVariationId,
@@ -727,9 +729,10 @@ export function formatFactMetricCreated(
   appOrigin: string,
 ): string {
   const m = data.factMetric;
-  const link = generateLinkToGrowthBook(appOrigin, "fact-metrics", m?.id || "");
+  if (!m) return "Fact metric created, but details unavailable.";
+  const link = generateLinkToGrowthBook(appOrigin, "fact-metrics", m.id || "");
   return [
-    `**Fact metric \`${m?.name}\` created.** (id: \`${m?.id}\`, type: ${m?.metricType})`,
+    `**Fact metric \`${m.name}\` created.** (id: \`${m.id}\`, type: ${m.metricType})`,
     "",
     `[View in GrowthBook](${link})`,
   ].join("\n");

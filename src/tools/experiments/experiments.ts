@@ -743,6 +743,7 @@ export function registerExperimentTools({
         );
 
         if (
+          split.length !== uniqueSplitIds.size ||
           uniqueSplitIds.size !== experiment.variations.length ||
           [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
           Math.abs(totalWeight - 1) > 1e-6
@@ -751,7 +752,7 @@ export function registerExperimentTools({
             content: [
               {
                 type: "text",
-                text: "Invalid trafficSplit. Provide each variation exactly once and ensure the weights sum to 1.",
+                text: "Invalid trafficSplit. Provide each variation exactly once (no duplicates) and ensure the weights sum to 1.",
               },
             ],
           };

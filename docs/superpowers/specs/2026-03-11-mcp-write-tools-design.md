@@ -338,7 +338,7 @@ Triggers a fresh analysis snapshot for an experiment and returns the results.
 1. POST to `/api/v1/experiments/{id}/snapshot` with `{ triggeredBy: "manual" }`
 2. Get the snapshot ID from the response
 3. Poll GET `/api/v1/snapshots/{snapshotId}` with exponential backoff (1s, 2s, 4s, 8s, 16s) until snapshot status indicates completion (check for `status !== "running"` rather than specific values, since the API schema does not enumerate status values), or timeout after 31s
-4. If successful, fetch and return fresh experiment results via `/experiments/{id}/results`
+4. Check the snapshot status: if it indicates an error state, return an error message with the snapshot ID and status. If successful, fetch and return fresh experiment results via `/experiments/{id}/results`
 5. If still running after timeout, return the snapshot ID and tell the agent to check back later
 
 ---
