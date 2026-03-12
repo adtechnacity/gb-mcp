@@ -130,7 +130,6 @@ Adds a targeting rule to a specific environment on a feature flag. Unlike `creat
 | `coverage`      | number               | no (rollout) | Traffic percentage 0-1 for rollout rules                  |
 | `hashAttribute` | string               | no (rollout) | Attribute for bucketing rollout users (default: "id")     |
 | `description`   | string               | no           | Rule description                                          |
-| `fileExtension` | enum                 | yes          | For SDK snippet in response                               |
 
 **Behavior:**
 
@@ -138,7 +137,7 @@ Adds a targeting rule to a specific environment on a feature flag. Unlike `creat
 2. Build rule object based on `ruleType`
 3. Append rule to the specified environment's rules array only
 4. POST the updated environments to `/api/v1/features/{id}`
-5. Return formatted detail
+5. Return formatted detail (updated feature summary)
 
 **Description for AI agents:**
 "Adds a targeting rule to a specific environment on a feature flag. Use get_environments to discover environment IDs. For rules across all environments, use create_force_rule instead."
@@ -338,7 +337,7 @@ Triggers a fresh analysis snapshot for an experiment and returns the results.
 
 1. POST to `/api/v1/experiments/{id}/snapshot` with `{ triggeredBy: "manual" }`
 2. Get the snapshot ID from the response
-3. Poll GET `/api/v1/snapshots/{snapshotId}` with exponential backoff (1s, 2s, 4s, 8s, 16s) until snapshot status indicates completion (check for `status !== "running"` rather than specific values, since the API schema does not enumerate status values), or timeout after 60s
+3. Poll GET `/api/v1/snapshots/{snapshotId}` with exponential backoff (1s, 2s, 4s, 8s, 16s) until snapshot status indicates completion (check for `status !== "running"` rather than specific values, since the API schema does not enumerate status values), or timeout after 31s
 4. If successful, fetch and return fresh experiment results via `/experiments/{id}/results`
 5. If still running after timeout, return the snapshot ID and tell the agent to check back later
 

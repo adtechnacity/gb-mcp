@@ -430,7 +430,7 @@ describe("refresh_experiment_results", () => {
 
     const tool = tools.find((t) => t.name === "refresh_experiment_results");
     expect(tool).toBeTruthy();
-    expect(tool!.config.annotations.idempotentHint).toBe(true);
+    expect(tool!.config.annotations.idempotentHint).toBeUndefined();
 
     const p = tool!.handler({ experimentId: "exp_1" });
     await vi.runAllTimersAsync();

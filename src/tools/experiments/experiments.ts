@@ -680,7 +680,7 @@ export function registerExperimentTools({
           .array(
             z.object({
               variationId: z.string(),
-              weight: z.number(),
+              weight: z.number().min(0).max(1),
             }),
           )
           .optional()
@@ -863,7 +863,8 @@ export function registerExperimentTools({
         const payload: Record<string, any> = { status: "stopped", phases };
         if (releasedVariationId)
           payload.releasedVariationId = releasedVariationId;
-        if (excludeFromPayload) payload.excludeFromPayload = excludeFromPayload;
+        if (excludeFromPayload !== undefined)
+          payload.excludeFromPayload = excludeFromPayload;
 
         const res = await fetchWithRateLimit(
           `${baseApiUrl}/api/v1/experiments/${experimentId}`,
@@ -911,7 +912,7 @@ export function registerExperimentTools({
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
       }),
-      annotations: { readOnlyHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false },
     },
     async ({ experimentId }) => {
       try {
