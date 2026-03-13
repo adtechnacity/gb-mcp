@@ -25,7 +25,7 @@ import {
   formatStaleFeatureFlags,
   formatApiError,
 } from "../format-responses.js";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { getDefaults } from "./defaults.js";
 
 interface FeatureTools extends ExtendedToolsInterface {}
@@ -459,9 +459,9 @@ export function registerFeatureTools({
       },
     },
     async ({ currentWorkingDirectory }) => {
-      function runCommand(command: string, cwd: string): Promise<string> {
+      function runCommand(args: string[], cwd: string): Promise<string> {
         return new Promise((resolve, reject) => {
-          exec(command, { cwd }, (error, stdout, stderr) => {
+          execFile("npx", args, { cwd }, (error, stdout, stderr) => {
             if (error) {
               reject(stderr || error.message);
             } else {
@@ -473,19 +473,37 @@ export function registerFeatureTools({
       try {
         // Login command
         await runCommand(
-          `npx -y growthbook@latest auth login -k ${apiKey} -u ${baseApiUrl} -p default`,
+          [
+            "-y",
+            "growthbook@latest",
+            "auth",
+            "login",
+            "-k",
+            apiKey,
+            "-u",
+            baseApiUrl,
+            "-p",
+            "default",
+          ],
           currentWorkingDirectory,
         );
         // Generate types command
         const output = await runCommand(
-          `npx -y growthbook@latest features generate-types -u ${baseApiUrl}`,
+          [
+            "-y",
+            "growthbook@latest",
+            "features",
+            "generate-types",
+            "-u",
+            baseApiUrl,
+          ],
           currentWorkingDirectory,
         );
         return {
           content: [
             {
               type: "text",
-              text: `✅ Types generated successfully:\n${output}. Offer to add a script to the project's package.json file to regenerate types when needed. The command is: 
+              text: `✅ Types generated successfully:\n${output}. Offer to add a script to the project's package.json file to regenerate types when needed. The command is:
               "npx -y growthbook@latest features generate-types -u ${baseApiUrl}"`,
             },
           ],

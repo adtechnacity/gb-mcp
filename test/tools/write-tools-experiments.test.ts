@@ -269,6 +269,60 @@ describe("start_experiment", () => {
 
     expect(res.content[0].text).toContain("draft");
   });
+
+  it("rejects invalid trafficSplit (duplicate IDs, bad weights)", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () => {
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "draft",
+            variations: [
+              { variationId: "v0", key: "0", name: "Control" },
+              { variationId: "v1", key: "1", name: "Treatment" },
+            ],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+
+    // Duplicate variationIds
+    const p1 = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v0", weight: 0.5 },
+        { variationId: "v0", weight: 0.5 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    const res1 = await p1;
+    expect(res1.content[0].text).toContain("Invalid trafficSplit");
+
+    // Weights don't sum to 1
+    const p2 = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v0", weight: 0.3 },
+        { variationId: "v1", weight: 0.3 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    const res2 = await p2;
+    expect(res2.content[0].text).toContain("Invalid trafficSplit");
+  });
 });
 
 describe("stop_experiment", () => {

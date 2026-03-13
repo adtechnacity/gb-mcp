@@ -320,6 +320,92 @@ describe("reorder_feature_rules", () => {
   });
 });
 
+describe("reorder_feature_rules — validation", () => {
+  async function setupAndGetTool(rules: any[]) {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () => {
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          feature: {
+            id: "my-flag",
+            environments: {
+              production: { enabled: true, rules },
+            },
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerFeatureTools } =
+      await import("../../src/tools/features.js");
+    registerFeatureTools(baseArgs);
+    return tools.find((t) => t.name === "reorder_feature_rules")!;
+  }
+
+  it("rejects duplicate ruleIds", async () => {
+    const tool = await setupAndGetTool([
+      { id: "rule-a", type: "force", value: "1" },
+      { id: "rule-b", type: "force", value: "2" },
+      { id: "rule-c", type: "force", value: "3" },
+    ]);
+
+    const p = tool
+      .handler({
+        featureId: "my-flag",
+        environment: "production",
+        ruleIds: ["rule-a", "rule-a", "rule-b"],
+      })
+      .catch((e: any) => e);
+    await vi.runAllTimersAsync();
+    const err = await p;
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain("Duplicate rule IDs");
+  });
+
+  it("rejects wrong rule count", async () => {
+    const tool = await setupAndGetTool([
+      { id: "rule-a", type: "force", value: "1" },
+      { id: "rule-b", type: "force", value: "2" },
+    ]);
+
+    const p = tool
+      .handler({
+        featureId: "my-flag",
+        environment: "production",
+        ruleIds: ["rule-a"],
+      })
+      .catch((e: any) => e);
+    await vi.runAllTimersAsync();
+    const err = await p;
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain("Expected 2 rule IDs but received 1");
+  });
+
+  it("rejects unknown rule ID", async () => {
+    const tool = await setupAndGetTool([
+      { id: "rule-a", type: "force", value: "1" },
+      { id: "rule-b", type: "force", value: "2" },
+    ]);
+
+    const p = tool
+      .handler({
+        featureId: "my-flag",
+        environment: "production",
+        ruleIds: ["rule-a", "rule-unknown"],
+      })
+      .catch((e: any) => e);
+    await vi.runAllTimersAsync();
+    const err = await p;
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain("Rule 'rule-unknown' not found");
+  });
+});
+
 describe("remove_feature_rule", () => {
   it("removes the specified rule from the environment", async () => {
     vi.useFakeTimers();
