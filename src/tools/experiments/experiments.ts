@@ -552,6 +552,12 @@ export function registerExperimentTools({
         description: z.string().optional().describe("Updated description"),
         hypothesis: z.string().optional().describe("Updated hypothesis"),
         tags: z.array(z.string()).optional().describe("Replace tags"),
+        trackingKey: z
+          .string()
+          .optional()
+          .describe(
+            "Unique tracking key for exposure logging. Must match the feature flag key when linked to a flag.",
+          ),
         owner: z.string().optional().describe("Owner email"),
         project: z.string().optional().describe("Move to project"),
         metrics: z.array(z.string()).optional().describe("Goal metric IDs"),
