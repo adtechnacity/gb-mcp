@@ -175,6 +175,7 @@ export function formatFeatureFlagDetail(
   if (!f) return "Feature flag not found.";
 
   const formatRule = (r: any, i: number): string => {
+    const idTag = r.id ? ` (id: \`${r.id}\`)` : "";
     const disabledTag = r.enabled === false ? " [DISABLED]" : "";
     const desc = r.description ? ` — ${r.description}` : "";
     const condition = r.condition ? `\n      Condition: ${r.condition}` : "";
@@ -189,28 +190,28 @@ export function formatFeatureFlagDetail(
       : "";
 
     if (r.type === "force") {
-      return `    ${i + 1}. Force rule${disabledTag}: value=\`${r.value}\`${desc}${condition}${savedGroups}${schedule}${prerequisites}`;
+      return `    ${i + 1}. Force rule${idTag}${disabledTag}: value=\`${r.value}\`${desc}${condition}${savedGroups}${schedule}${prerequisites}`;
     }
     if (r.type === "rollout") {
-      return `    ${i + 1}. Rollout rule${disabledTag}: value=\`${r.value}\`, coverage=${r.coverage}, hashAttribute=${r.hashAttribute || "id"}${desc}${condition}${savedGroups}${schedule}`;
+      return `    ${i + 1}. Rollout rule${idTag}${disabledTag}: value=\`${r.value}\`, coverage=${r.coverage}, hashAttribute=${r.hashAttribute || "id"}${desc}${condition}${savedGroups}${schedule}`;
     }
     if (r.type === "experiment-ref") {
       const variations = r.variations?.length
         ? `\n      Variations: ${r.variations.map((v: any) => `${v.variationId}=\`${v.value}\``).join(", ")}`
         : "";
-      return `    ${i + 1}. Experiment rule${disabledTag}: experimentId=\`${r.experimentId}\`${desc}${condition}${variations}${schedule}`;
+      return `    ${i + 1}. Experiment rule${idTag}${disabledTag}: experimentId=\`${r.experimentId}\`${desc}${condition}${variations}${schedule}`;
     }
     if (r.type === "experiment") {
       const trackingKey = r.trackingKey
         ? `, trackingKey=\`${r.trackingKey}\``
         : "";
       const coverage = r.coverage != null ? `, coverage=${r.coverage}` : "";
-      return `    ${i + 1}. Inline experiment${disabledTag}${trackingKey}${coverage}${desc}${condition}${savedGroups}${schedule}`;
+      return `    ${i + 1}. Inline experiment${idTag}${disabledTag}${trackingKey}${coverage}${desc}${condition}${savedGroups}${schedule}`;
     }
     if (r.type === "safe-rollout") {
-      return `    ${i + 1}. Safe rollout${disabledTag}: status=${r.status || "running"}, control=\`${r.controlValue}\`, variation=\`${r.variationValue}\`${condition}${savedGroups}${prerequisites}`;
+      return `    ${i + 1}. Safe rollout${idTag}${disabledTag}: status=${r.status || "running"}, control=\`${r.controlValue}\`, variation=\`${r.variationValue}\`${condition}${savedGroups}${prerequisites}`;
     }
-    return `    ${i + 1}. ${r.type} rule${disabledTag}${desc}`;
+    return `    ${i + 1}. ${r.type} rule${idTag}${disabledTag}${desc}`;
   };
 
   const envLines = f.environments

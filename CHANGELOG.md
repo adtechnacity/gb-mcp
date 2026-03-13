@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-03-13
+
+### Added
+
+- Rule IDs now shown in `get_feature_flags` output — enables use of `reorder_feature_rules` and `remove_feature_rule` which require rule IDs
+
 ## [1.9.1] - 2026-03-13
 
 ### Added
