@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatFeatureFlagDetail,
   formatFeatureFlagUpdated,
   formatFeatureFlagToggled,
   formatFeatureRuleAdded,
@@ -231,5 +232,59 @@ describe("metrics write formatters", () => {
     expect(result).toContain("2");
     expect(result).toContain("Conv Rate");
     expect(result).toContain("proportion");
+  });
+});
+
+describe("formatFeatureFlagDetail — rule IDs", () => {
+  const appOrigin = "https://app.growthbook.io";
+
+  it("includes rule IDs in output for all rule types", () => {
+    const data = {
+      feature: {
+        id: "test-flag",
+        valueType: "boolean",
+        defaultValue: "false",
+        owner: "test@example.com",
+        archived: false,
+        environments: {
+          dev: {
+            enabled: true,
+            rules: [
+              {
+                id: "fr_abc123",
+                type: "experiment-ref",
+                experimentId: "exp_xyz",
+              },
+              { id: "fr_def456", type: "force", value: "scaffolded-prompts" },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = formatFeatureFlagDetail(data as any, appOrigin);
+    expect(result).toContain("(id: `fr_abc123`)");
+    expect(result).toContain("(id: `fr_def456`)");
+  });
+
+  it("omits id tag when rule has no id", () => {
+    const data = {
+      feature: {
+        id: "test-flag",
+        valueType: "boolean",
+        defaultValue: "false",
+        owner: "test@example.com",
+        archived: false,
+        environments: {
+          dev: {
+            enabled: true,
+            rules: [{ type: "force", value: "true" }],
+          },
+        },
+      },
+    };
+
+    const result = formatFeatureFlagDetail(data as any, appOrigin);
+    expect(result).not.toContain("(id:");
   });
 });
