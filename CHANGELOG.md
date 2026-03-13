@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-03-13
+
+### Added
+
+- `update_experiment` now supports `trackingKey` — align the experiment's tracking key with its linked feature flag key for correct exposure attribution
+
 ## [1.9.0] - 2026-03-11
 
 ### Added

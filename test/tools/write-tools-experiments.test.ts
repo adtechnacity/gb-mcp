@@ -96,6 +96,7 @@ describe("update_experiment", () => {
       experimentId: "exp_1",
       name: "Updated Name",
       hypothesis: "New hypothesis",
+      trackingKey: "cro-memories-step-variant",
     });
     await vi.runAllTimersAsync();
     const res = await p;
@@ -106,6 +107,7 @@ describe("update_experiment", () => {
     const body = JSON.parse(postCall!.body!);
     expect(body.name).toBe("Updated Name");
     expect(body.hypothesis).toBe("New hypothesis");
+    expect(body.trackingKey).toBe("cro-memories-step-variant");
     expect(body.status).toBeUndefined();
   });
 });
