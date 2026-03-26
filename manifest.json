@@ -16,9 +16,7 @@
     "entry_point": "server/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/server/index.js"
-      ],
+      "args": ["${__dirname}/server/index.js"],
       "env": {
         "GB_API_KEY": "${user_config.GB_API_KEY}",
         "GB_EMAIL": "${user_config.GB_EMAIL}",
@@ -155,6 +153,46 @@
     {
       "name": "list_fact_metrics",
       "description": "List fact metrics with full configuration details."
+    },
+    {
+      "name": "create_fact_table",
+      "description": "Create a new fact table (SQL data source for fact metrics)."
+    },
+    {
+      "name": "update_fact_table",
+      "description": "Update an existing fact table's SQL, name, or properties."
+    },
+    {
+      "name": "delete_fact_table",
+      "description": "Delete a fact table. Destructive — dependent metrics lose their data source."
+    },
+    {
+      "name": "delete_fact_metric",
+      "description": "Delete a fact metric. Destructive — experiments referencing it will lose the metric."
+    },
+    {
+      "name": "list_fact_table_filters",
+      "description": "List saved filters on a fact table."
+    },
+    {
+      "name": "create_fact_table_filter",
+      "description": "Create a saved filter (SQL WHERE fragment) on a fact table."
+    },
+    {
+      "name": "delete_fact_table_filter",
+      "description": "Delete a saved filter from a fact table."
+    },
+    {
+      "name": "list_dimensions",
+      "description": "List dimensions available for experiment result breakdowns."
+    },
+    {
+      "name": "create_dimension",
+      "description": "Create a dimension for segmenting experiment results by user attributes."
+    },
+    {
+      "name": "delete_dimension",
+      "description": "Delete a dimension. Destructive — experiment analyses using it will lose the breakdown."
     }
   ],
   "prompts": [
@@ -208,12 +246,7 @@
       "sensitive": false
     }
   },
-  "keywords": [
-    "experimentation",
-    "feature flags",
-    "ab testing",
-    "growthbook"
-  ],
+  "keywords": ["experimentation", "feature flags", "ab testing", "growthbook"],
   "license": "MIT",
   "repository": {
     "type": "git",

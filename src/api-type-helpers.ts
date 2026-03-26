@@ -60,6 +60,16 @@ export type ListEnvironmentsResponse =
 export type ListAttributesResponse =
   Paths["/attributes"]["get"]["responses"][200]["content"]["application/json"];
 
+// Dimensions
+export type ListDimensionsResponse =
+  Paths["/dimensions"]["get"]["responses"][200]["content"]["application/json"];
+export type CreateDimensionResponse =
+  Paths["/dimensions"]["post"]["responses"][200]["content"]["application/json"];
+export type GetDimensionResponse =
+  Paths["/dimensions/{id}"]["get"]["responses"][200]["content"]["application/json"];
+export type DeleteDimensionResponse =
+  Paths["/dimensions/{id}"]["delete"]["responses"][200]["content"]["application/json"];
+
 // Experiments
 export type ListExperimentsResponse =
   Paths["/experiments"]["get"]["responses"][200]["content"]["application/json"];
@@ -107,6 +117,22 @@ export type UpdateFactMetricResponse =
 // ─── Fact tables ────────────────────────────────────────────────────
 export type ListFactTablesResponse =
   Paths["/fact-tables"]["get"]["responses"][200]["content"]["application/json"];
+export type CreateFactTableResponse =
+  Paths["/fact-tables"]["post"]["responses"][200]["content"]["application/json"];
+export type UpdateFactTableResponse =
+  Paths["/fact-tables/{id}"]["post"]["responses"][200]["content"]["application/json"];
+export type DeleteFactTableResponse =
+  Paths["/fact-tables/{id}"]["delete"]["responses"][200]["content"]["application/json"];
+export type DeleteFactMetricResponse =
+  Paths["/fact-metrics/{id}"]["delete"]["responses"][200]["content"]["application/json"];
+
+// ─── Fact table filters ─────────────────────────────────────────────
+export type ListFactTableFiltersResponse =
+  Paths["/fact-tables/{factTableId}/filters"]["get"]["responses"][200]["content"]["application/json"];
+export type CreateFactTableFilterResponse =
+  Paths["/fact-tables/{factTableId}/filters"]["post"]["responses"][200]["content"]["application/json"];
+export type DeleteFactTableFilterResponse =
+  Paths["/fact-tables/{factTableId}/filters/{id}"]["delete"]["responses"][200]["content"]["application/json"];
 
 // Component schema aliases (for formatters that work with single entities or arrays)
 export type Feature = Components["schemas"]["Feature"];

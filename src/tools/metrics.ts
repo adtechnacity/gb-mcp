@@ -19,8 +19,15 @@ import {
   formatApiError,
   formatFactMetricCreated,
   formatFactMetricUpdated,
+  formatFactMetricDeleted,
   formatFactTableList,
+  formatFactTableCreated,
+  formatFactTableUpdated,
+  formatFactTableDeleted,
   formatFactMetricList,
+  formatFactTableFilterList,
+  formatFactTableFilterCreated,
+  formatFactTableFilterDeleted,
 } from "../format-responses.js";
 
 interface MetricsTools extends ExtendedToolsInterface {}
@@ -458,6 +465,455 @@ export function registerMetricsTools({
           formatApiError(error, "fetching fact metrics", [
             "Check that your GB_API_KEY has permission to read fact metrics.",
           ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: create_fact_table
+   */
+  server.registerTool(
+    "create_fact_table",
+    {
+      title: "Create Fact Table",
+      description:
+        "Creates a new fact table. Fact tables define the SQL data sources that fact metrics reference. Requires a name, datasource ID, user ID types, and SQL query.",
+      inputSchema: z.object({
+        name: z.string().describe("Fact table name"),
+        description: z.string().optional().describe("Description"),
+        datasource: z.string().describe("Datasource ID"),
+        userIdTypes: z
+          .array(z.string())
+          .describe("User ID types (e.g. ['user_id'])"),
+        sql: z.string().describe("SQL query that defines the fact table"),
+        eventName: z
+          .string()
+          .optional()
+          .describe("Column name used as the event name"),
+        tags: z.array(z.string()).optional().describe("Tags"),
+        projects: z.array(z.string()).optional().describe("Project IDs"),
+        owner: z
+          .string()
+          .optional()
+          .describe("Owner email (defaults to current user)"),
+        managedBy: z.string().optional().describe("Managed by (e.g. 'api')"),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+      },
+    },
+    async ({
+      name,
+      description,
+      datasource,
+      userIdTypes,
+      sql,
+      eventName,
+      tags,
+      projects,
+      owner: tableOwner,
+      managedBy,
+    }) => {
+      try {
+        const payload: Record<string, any> = {
+          name,
+          datasource,
+          userIdTypes,
+          sql,
+        };
+        if (description !== undefined) payload.description = description;
+        if (eventName !== undefined) payload.eventName = eventName;
+        if (tags !== undefined) payload.tags = tags;
+        if (projects !== undefined) payload.projects = projects;
+        if (managedBy !== undefined) payload.managedBy = managedBy;
+        payload.owner = tableOwner || user;
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-tables`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify(payload),
+          },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [
+            { type: "text", text: formatFactTableCreated(data, appOrigin) },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `creating fact table '${name}'`, [
+            "Check that the datasource ID is valid.",
+            "Use list_fact_tables to see existing fact tables.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: update_fact_table
+   */
+  server.registerTool(
+    "update_fact_table",
+    {
+      title: "Update Fact Table",
+      description:
+        "Updates an existing fact table. Only the provided fields are changed. Use this to update the SQL query, columns, name, or other properties.",
+      inputSchema: z.object({
+        factTableId: z.string().describe("Fact table ID (starts with 'ftb_')"),
+        name: z.string().optional().describe("Updated name"),
+        description: z.string().optional().describe("Updated description"),
+        sql: z.string().optional().describe("Updated SQL query"),
+        userIdTypes: z
+          .array(z.string())
+          .optional()
+          .describe("Updated user ID types"),
+        eventName: z.string().optional().describe("Updated event name column"),
+        columns: z
+          .array(
+            z.object({
+              column: z.string().describe("Column name from SQL"),
+              name: z.string().describe("Display name"),
+              description: z.string().optional().describe("Column description"),
+              numberFormat: z
+                .string()
+                .optional()
+                .describe(
+                  "Number format (e.g. '', 'currency', 'time:seconds')",
+                ),
+              datatype: z
+                .enum(["", "boolean", "number", "string", "unknown"])
+                .describe("Column data type"),
+              deleted: z
+                .boolean()
+                .optional()
+                .describe("Whether column is deleted"),
+              alwaysInlineFilter: z
+                .boolean()
+                .optional()
+                .describe("Always include as inline filter"),
+            }),
+          )
+          .optional()
+          .describe(
+            "Column definitions with names, types, and display settings. Use this to set column datatypes after creating a fact table.",
+          ),
+        tags: z.array(z.string()).optional(),
+        projects: z.array(z.string()).optional(),
+        owner: z.string().optional(),
+        managedBy: z.string().optional(),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+      },
+    },
+    async ({ factTableId, ...fields }) => {
+      try {
+        const payload: Record<string, any> = {};
+        for (const [key, value] of Object.entries(fields)) {
+          if (value !== undefined) payload[key] = value;
+        }
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-tables/${factTableId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify(payload),
+          },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [
+            { type: "text", text: formatFactTableUpdated(data, appOrigin) },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `updating fact table '${factTableId}'`, [
+            "Check the fact table ID is correct (should start with 'ftb_').",
+            "Use list_fact_tables to list available fact tables.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: delete_fact_table
+   */
+  server.registerTool(
+    "delete_fact_table",
+    {
+      title: "Delete Fact Table",
+      description:
+        "Deletes a fact table. This is destructive — all fact metrics referencing this table will lose their data source. Use list_fact_metrics to check for dependent metrics before deleting.",
+      inputSchema: z.object({
+        factTableId: z
+          .string()
+          .describe("Fact table ID to delete (starts with 'ftb_')"),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+      },
+    },
+    async ({ factTableId }) => {
+      try {
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-tables/${factTableId}`,
+          {
+            method: "DELETE",
+            headers: buildHeaders(apiKey),
+          },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [{ type: "text", text: formatFactTableDeleted(data) }],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `deleting fact table '${factTableId}'`, [
+            "Check the fact table ID is correct.",
+            "Ensure no fact metrics depend on this table, or delete them first.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: delete_fact_metric
+   */
+  server.registerTool(
+    "delete_fact_metric",
+    {
+      title: "Delete Fact Metric",
+      description:
+        "Deletes a fact metric. This is destructive — experiments referencing this metric will lose it. Check experiment assignments before deleting.",
+      inputSchema: z.object({
+        metricId: z
+          .string()
+          .describe("Fact metric ID to delete (starts with 'fact__')"),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+      },
+    },
+    async ({ metricId }) => {
+      try {
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-metrics/${metricId}`,
+          {
+            method: "DELETE",
+            headers: buildHeaders(apiKey),
+          },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [{ type: "text", text: formatFactMetricDeleted(data) }],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `deleting fact metric '${metricId}'`, [
+            "Check the metric ID is correct (should start with 'fact__').",
+            "Ensure no active experiments reference this metric.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: list_fact_table_filters
+   */
+  server.registerTool(
+    "list_fact_table_filters",
+    {
+      title: "List Fact Table Filters",
+      description:
+        "Lists saved filters on a fact table. Filters are reusable SQL WHERE clause fragments that can be referenced by fact metrics.",
+      inputSchema: z.object({
+        factTableId: z.string().describe("Fact table ID (starts with 'ftb_')"),
+        limit: z
+          .number()
+          .min(1)
+          .max(100)
+          .default(100)
+          .describe("Number of items to fetch (1-100)"),
+        offset: z
+          .number()
+          .min(0)
+          .default(0)
+          .describe("Number of items to skip"),
+      }),
+      annotations: {
+        readOnlyHint: true,
+      },
+    },
+    async ({ factTableId, limit, offset }) => {
+      try {
+        const queryParams = new URLSearchParams({
+          limit: limit.toString(),
+          offset: offset.toString(),
+        });
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-tables/${factTableId}/filters?${queryParams.toString()}`,
+          { headers: buildHeaders(apiKey) },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [{ type: "text", text: formatFactTableFilterList(data) }],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `fetching filters for fact table '${factTableId}'`,
+            [
+              "Check the fact table ID is correct (should start with 'ftb_').",
+              "Use list_fact_tables to find valid fact table IDs.",
+            ],
+          ),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: create_fact_table_filter
+   */
+  server.registerTool(
+    "create_fact_table_filter",
+    {
+      title: "Create Fact Table Filter",
+      description:
+        "Creates a saved filter on a fact table. Filters are reusable SQL WHERE clause fragments (e.g., \"event_name = 'purchase'\") that can be referenced by ID in fact metric numerator/denominator configurations.",
+      inputSchema: z.object({
+        factTableId: z
+          .string()
+          .describe(
+            "Fact table ID to create the filter on (starts with 'ftb_')",
+          ),
+        name: z.string().describe("Filter name (e.g., 'Purchase Events')"),
+        description: z.string().optional().describe("Description"),
+        value: z
+          .string()
+          .describe(
+            "SQL WHERE clause fragment (e.g., \"event_name = 'purchase'\")",
+          ),
+        managedBy: z
+          .enum(["", "api"])
+          .optional()
+          .describe("Set to 'api' to prevent UI edits"),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+      },
+    },
+    async ({ factTableId, name, description, value, managedBy }) => {
+      try {
+        const payload: Record<string, any> = { name, value };
+        if (description !== undefined) payload.description = description;
+        if (managedBy !== undefined) payload.managedBy = managedBy;
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-tables/${factTableId}/filters`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify(payload),
+          },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [{ type: "text", text: formatFactTableFilterCreated(data) }],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `creating filter '${name}' on fact table '${factTableId}'`,
+            [
+              "Check the fact table ID is correct.",
+              "The value should be a valid SQL WHERE clause fragment.",
+            ],
+          ),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: delete_fact_table_filter
+   */
+  server.registerTool(
+    "delete_fact_table_filter",
+    {
+      title: "Delete Fact Table Filter",
+      description:
+        "Deletes a saved filter from a fact table. This is destructive — any fact metrics referencing this filter ID will lose it.",
+      inputSchema: z.object({
+        factTableId: z.string().describe("Fact table ID (starts with 'ftb_')"),
+        filterId: z.string().describe("Filter ID to delete"),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+      },
+    },
+    async ({ factTableId, filterId }) => {
+      try {
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/fact-tables/${factTableId}/filters/${filterId}`,
+          {
+            method: "DELETE",
+            headers: buildHeaders(apiKey),
+          },
+        );
+
+        await handleResNotOk(res);
+        const data = await res.json();
+
+        return {
+          content: [{ type: "text", text: formatFactTableFilterDeleted(data) }],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `deleting filter '${filterId}' from fact table '${factTableId}'`,
+            [
+              "Check both the fact table ID and filter ID are correct.",
+              "Use list_fact_table_filters to see available filters.",
+            ],
+          ),
         );
       }
     },

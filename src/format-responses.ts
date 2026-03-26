@@ -785,6 +785,110 @@ export function formatFactMetricList(data: ListFactMetricsResponse): string {
   return [`**${metrics.length} fact metric(s):**`, "", ...lines].join("\n");
 }
 
+// ─── Fact Table Write Formatters ─────────────────────────────────────
+
+export function formatFactTableCreated(data: any, appOrigin: string): string {
+  const t = data.factTable;
+  if (!t) return "Fact table created, but details unavailable.";
+  const link = generateLinkToGrowthBook(appOrigin, "fact-tables", t.id || "");
+  return [
+    `**Fact table \`${t.name}\` created.** (id: \`${t.id}\`, datasource: \`${t.datasource}\`)`,
+    "",
+    t.sql
+      ? `SQL: \`${t.sql.replace(/\n/g, " ").trim().slice(0, 200)}${t.sql.length > 200 ? "..." : ""}\``
+      : "",
+    "",
+    `[View in GrowthBook](${link})`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatFactTableUpdated(data: any, appOrigin: string): string {
+  const t = data.factTable;
+  if (!t) return "Fact table updated, but details unavailable.";
+  const link = generateLinkToGrowthBook(appOrigin, "fact-tables", t.id || "");
+  return [
+    `**Fact table \`${t.id}\` updated.** (${t.name}, datasource: \`${t.datasource}\`)`,
+    "",
+    `[View in GrowthBook](${link})`,
+  ].join("\n");
+}
+
+export function formatFactTableDeleted(data: any): string {
+  const id = data.deletedId;
+  return id ? `**Fact table \`${id}\` deleted.**` : "Fact table deleted.";
+}
+
+export function formatFactMetricDeleted(data: any): string {
+  const id = data.deletedId;
+  return id ? `**Fact metric \`${id}\` deleted.**` : "Fact metric deleted.";
+}
+
+// ─── Dimension Formatters ────────────────────────────────────────────
+
+export function formatDimensionList(data: any): string {
+  const dims = (data as any).dimensions || [];
+  if (dims.length === 0) {
+    return "No dimensions found. Use create_dimension to create one.";
+  }
+  const lines = dims.map((d: any) => {
+    const desc = d.description ? ` — ${d.description}` : "";
+    const sql = d.query
+      ? `\n  SQL: \`${d.query.replace(/\n/g, " ").trim().slice(0, 150)}${d.query.length > 150 ? "..." : ""}\``
+      : "";
+    return `- **${d.name}** (id: \`${d.id}\`)${desc}\n  Datasource: \`${d.datasourceId}\`, Identifier: \`${d.identifierType}\`${sql}`;
+  });
+  return [`**${dims.length} dimension(s):**`, "", ...lines].join("\n");
+}
+
+export function formatDimensionCreated(data: any): string {
+  const d = data.dimension;
+  if (!d) return "Dimension created, but details unavailable.";
+  return [
+    `**Dimension \`${d.name}\` created.** (id: \`${d.id}\`)`,
+    `Datasource: \`${d.datasourceId}\`, Identifier: \`${d.identifierType}\``,
+    d.query
+      ? `SQL: \`${d.query.replace(/\n/g, " ").trim().slice(0, 150)}${d.query.length > 150 ? "..." : ""}\``
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatDimensionDeleted(data: any): string {
+  const id = data.deletedId;
+  return id ? `**Dimension \`${id}\` deleted.**` : "Dimension deleted.";
+}
+
+// ─── Fact Table Filter Formatters ────────────────────────────────────
+
+export function formatFactTableFilterList(data: any): string {
+  const filters = (data as any).factTableFilters || [];
+  if (filters.length === 0) {
+    return "No filters found on this fact table. Use create_fact_table_filter to create one.";
+  }
+  const lines = filters.map((f: any) => {
+    const desc = f.description ? ` — ${f.description}` : "";
+    return `- **${f.name}** (id: \`${f.id}\`)${desc}\n  Value: \`${f.value}\``;
+  });
+  return [`**${filters.length} filter(s):**`, "", ...lines].join("\n");
+}
+
+export function formatFactTableFilterCreated(data: any): string {
+  const f = data.factTableFilter;
+  if (!f) return "Filter created, but details unavailable.";
+  return [
+    `**Filter \`${f.name}\` created.** (id: \`${f.id}\`)`,
+    `Value: \`${f.value}\``,
+  ].join("\n");
+}
+
+export function formatFactTableFilterDeleted(data: any): string {
+  const id = data.deletedId;
+  return id ? `**Filter \`${id}\` deleted.**` : "Filter deleted.";
+}
+
 // ─── Defaults ───────────────────────────────────────────────────────
 export function formatDefaults(defaults: any): string {
   const parts: string[] = [];

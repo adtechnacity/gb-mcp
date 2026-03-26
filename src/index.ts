@@ -11,6 +11,7 @@ import { getApiKey, getApiUrl, getAppOrigin } from "./utils.js";
 import { registerSearchTools } from "./tools/search.js";
 import { registerDefaultsTools } from "./tools/defaults.js";
 import { registerMetricsTools } from "./tools/metrics.js";
+import { registerDimensionTools } from "./tools/dimensions.js";
 import { registerExperimentPrompts } from "./prompts/experiment-prompts.js";
 import packageDetails from "../package.json" with { type: "json" };
 
@@ -44,7 +45,7 @@ All mutating tools require a fileExtension parameter for SDK integration guidanc
       tools: {},
       prompts: {},
     },
-  }
+  },
 );
 
 registerEnvironmentTools({
@@ -92,6 +93,14 @@ registerDefaultsTools({
 });
 
 registerMetricsTools({
+  server,
+  baseApiUrl,
+  apiKey,
+  appOrigin,
+  user,
+});
+
+registerDimensionTools({
   server,
   baseApiUrl,
   apiKey,

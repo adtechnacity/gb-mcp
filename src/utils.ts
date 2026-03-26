@@ -128,7 +128,7 @@ export function getCustomHeaders(): Record<string, string> {
  */
 export function buildHeaders(
   apiKey: string,
-  includeContentType = true
+  includeContentType = true,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     ...getCustomHeaders(),
@@ -317,7 +317,7 @@ export async function searchGrowthBookDocs(
     hitsPerPage?: number;
     attributesToSnippet?: string[];
     attributesToHighlight?: string[];
-  }
+  },
 ): Promise<SearchResult[]> {
   const APPLICATION_ID = "MN7ZMY63CG";
   const API_KEY = "e17ebcbd97bce29ad0bdec269770e9df";
@@ -411,7 +411,7 @@ export async function searchGrowthBookDocs(
       if (
         hit._highlightResult?.content?.value &&
         !snippetParts.some((s) =>
-          s.includes(hit._highlightResult!.content!.value)
+          s.includes(hit._highlightResult!.content!.value),
         )
       ) {
         const highlighted = hit._highlightResult.content.value;
@@ -503,8 +503,9 @@ export function generateLinkToGrowthBook(
     | "project"
     | "sdk-connection"
     | "metric"
-    | "fact-metrics",
-  id: string
+    | "fact-metrics"
+    | "fact-tables",
+  id: string,
 ) {
   return `${appOrigin}/${resource}/${id}`;
 }
@@ -522,13 +523,13 @@ export const paginationSchema = {
     .min(0)
     .default(0)
     .describe(
-      "The number of items to skip. For example, set to 100 to fetch the second page with default limit. Note: The API returns items in chronological order (oldest first) by default."
+      "The number of items to skip. For example, set to 100 to fetch the second page with default limit. Note: The API returns items in chronological order (oldest first) by default.",
     ),
   mostRecent: z
     .boolean()
     .default(false)
     .describe(
-      "When true, fetches the most recent items and returns them newest-first. When false (default), returns oldest items first."
+      "When true, fetches the most recent items and returns them newest-first. When false (default), returns oldest items first.",
     ),
 } as const;
 
@@ -537,7 +538,7 @@ export const featureFlagSchema = {
     .string()
     .regex(
       /^[a-zA-Z0-9_.:|_-]+$/,
-      "Feature key can only include letters, numbers, and the characters _, -, ., :, and |"
+      "Feature key can only include letters, numbers, and the characters _, -, ., :, and |",
     )
     .describe("A unique key name for the feature"),
   valueType: z
@@ -553,13 +554,13 @@ export const featureFlagSchema = {
   fileExtension: z
     .enum(SUPPORTED_FILE_EXTENSIONS)
     .describe(
-      "The extension of the current file. If it's unclear, ask the user."
+      "The extension of the current file. If it's unclear, ask the user.",
     ),
   customFields: z
     .record(z.string(), z.string())
     .optional()
     .describe(
-      "Custom field values as key-value pairs. Keys are custom field IDs, values are string representations (e.g. {\"priority\": \"high\", \"team\": \"growth\"})."
+      'Custom field values as key-value pairs. Keys are custom field IDs, values are string representations (e.g. {"priority": "high", "team": "growth"}).',
     ),
 } as const;
 
@@ -571,7 +572,7 @@ const MIN_DELAY_MS = 50;
 export async function fetchWithRateLimit(
   url: string,
   options: RequestInit,
-  retries = 3
+  retries = 3,
 ): Promise<Response> {
   // Small courtesy delay to avoid hammering
   await sleep(MIN_DELAY_MS);
@@ -582,10 +583,10 @@ export async function fetchWithRateLimit(
   if (response.status === 429 && retries > 0) {
     const resetSeconds = parseInt(
       response.headers.get("RateLimit-Reset") || "5",
-      10
+      10,
     );
     console.error(
-      `Rate limited, waiting ${resetSeconds}s (${retries} retries left)`
+      `Rate limited, waiting ${resetSeconds}s (${retries} retries left)`,
     );
     await sleep(resetSeconds * 1000);
     return fetchWithRateLimit(url, options, retries - 1);
@@ -600,13 +601,13 @@ export async function fetchWithRateLimit(
 export async function fetchFeatureFlag(
   baseApiUrl: string,
   apiKey: string,
-  featureId: string
+  featureId: string,
 ) {
   const res = await fetchWithRateLimit(
     `${baseApiUrl}/api/v1/features/${featureId}`,
     {
       headers: buildHeaders(apiKey),
-    }
+    },
   );
 
   await handleResNotOk(res);
@@ -622,27 +623,30 @@ export async function fetchFeatureFlag(
 export function mergeRuleIntoFeatureFlag(
   existingFeature: any,
   newRule: Record<string, any>,
-  defaultEnvironments: string[]
+  defaultEnvironments: string[],
 ): Record<string, any> {
   const existingEnvironments = existingFeature?.environments || {};
 
   // Start with all existing environments to preserve any that aren't in defaults
-  const environments = Object.keys(existingEnvironments).reduce((acc, env) => {
-    const existingEnv = existingEnvironments[env];
-    const existingRules = existingEnv?.rules || [];
+  const environments = Object.keys(existingEnvironments).reduce(
+    (acc, env) => {
+      const existingEnv = existingEnvironments[env];
+      const existingRules = existingEnv?.rules || [];
 
-    // Add new rule only to default environments, preserve all other properties
-    if (defaultEnvironments.includes(env)) {
-      acc[env] = {
-        ...existingEnv,
-        rules: [...existingRules, newRule],
-      };
-    } else {
-      // Preserve environment as-is
-      acc[env] = existingEnv;
-    }
-    return acc;
-  }, {} as Record<string, any>);
+      // Add new rule only to default environments, preserve all other properties
+      if (defaultEnvironments.includes(env)) {
+        acc[env] = {
+          ...existingEnv,
+          rules: [...existingRules, newRule],
+        };
+      } else {
+        // Preserve environment as-is
+        acc[env] = existingEnv;
+      }
+      return acc;
+    },
+    {} as Record<string, any>,
+  );
 
   // Also ensure all default environments are included (in case they don't exist yet)
   defaultEnvironments.forEach((env) => {
@@ -664,7 +668,7 @@ export async function fetchWithPagination(
   limit: number,
   offset: number,
   mostRecent: boolean,
-  additionalParams?: Record<string, string>
+  additionalParams?: Record<string, string>,
 ): Promise<any> {
   // Default behavior: use provided limit and offset
   if (!mostRecent || offset > 0) {
@@ -686,7 +690,7 @@ export async function fetchWithPagination(
       `${baseApiUrl}${endpoint}?${queryParams.toString()}`,
       {
         headers: buildHeaders(apiKey),
-      }
+      },
     );
 
     await handleResNotOk(res);
@@ -698,7 +702,7 @@ export async function fetchWithPagination(
     `${baseApiUrl}${endpoint}?limit=1`,
     {
       headers: buildHeaders(apiKey),
-    }
+    },
   );
 
   await handleResNotOk(countRes);
@@ -724,7 +728,7 @@ export async function fetchWithPagination(
     `${baseApiUrl}${endpoint}?${mostRecentQueryParams.toString()}`,
     {
       headers: buildHeaders(apiKey),
-    }
+    },
   );
 
   await handleResNotOk(mostRecentRes);
