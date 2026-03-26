@@ -48,7 +48,8 @@ src/
     environments.ts     # Environment listing
     projects.ts         # Project listing
     sdk-connections.ts  # SDK connection tools
-    metrics.ts          # Metrics tools (get, create/update fact metrics, list fact tables)
+    metrics.ts          # Metrics tools (get, create/update fact metrics, fact tables, fact table filters)
+    dimensions.ts       # Dimension tools (list, create, delete)
     search.ts           # Documentation search
   prompts/              # MCP prompt registrations
   types/                # TypeScript type definitions

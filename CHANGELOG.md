@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.3] - 2026-03-26
+
+### Added
+
+- `refresh_experiment_results` now supports optional `dimension` and `phase` parameters — break down results by dimension (e.g., UTM source, country) or filter to a specific experiment phase
+
+### Improved
+
+- `get_metrics` now fetches legacy and fact metrics in parallel for faster responses
+- Custom HTTP headers (`GB_HTTP_HEADER_*`) are now cached after first computation
+- Rate-limit retry delay is now capped at 60 seconds to prevent indefinite hangs
+
 ## [1.9.2] - 2026-03-13
 
 ### Added

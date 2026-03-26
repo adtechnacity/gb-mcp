@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getCustomHeaders, buildHeaders } from "../src/utils.js";
+import {
+  getCustomHeaders,
+  buildHeaders,
+  resetCustomHeadersCache,
+} from "../src/utils.js";
 
 describe("Custom HTTP Headers", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    // Reset environment before each test
+    // Reset environment and header cache before each test
     process.env = { ...originalEnv };
+    resetCustomHeadersCache();
   });
 
   afterEach(() => {

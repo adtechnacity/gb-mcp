@@ -149,6 +149,23 @@ describe("experiment write formatters", () => {
     expect(result).toContain("refreshed");
   });
 
+  it("formatSnapshotResult includes dimension in success message", () => {
+    const result = formatSnapshotResult(
+      "exp_123",
+      "success",
+      appOrigin,
+      undefined,
+      "dim_country",
+    );
+    expect(result).toContain("refreshed");
+    expect(result).toContain("Dimension breakdown: `dim_country`");
+  });
+
+  it("formatSnapshotResult omits dimension line when not provided", () => {
+    const result = formatSnapshotResult("exp_123", "success", appOrigin);
+    expect(result).not.toContain("Dimension");
+  });
+
   it("formatSnapshotResult handles timeout", () => {
     const result = formatSnapshotResult(
       "exp_123",
@@ -158,6 +175,18 @@ describe("experiment write formatters", () => {
     );
     expect(result).toContain("timeout");
     expect(result).toContain("snap_456");
+  });
+
+  it("formatSnapshotResult includes dimension in timeout message", () => {
+    const result = formatSnapshotResult(
+      "exp_123",
+      "timeout",
+      appOrigin,
+      "snap_456",
+      "dim_utm",
+    );
+    expect(result).toContain("timeout");
+    expect(result).toContain("Requested dimension: `dim_utm`");
   });
 });
 
