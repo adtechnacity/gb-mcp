@@ -111,25 +111,26 @@ export function registerMetricsTools({
       try {
         const additionalParams = project ? { projectId: project } : undefined;
 
-        const metricsData = (await fetchWithPagination(
-          baseApiUrl,
-          apiKey,
-          "/api/v1/metrics",
-          limit,
-          offset,
-          mostRecent,
-          additionalParams,
-        )) as ListMetricsResponse;
-
-        const factMetricData = (await fetchWithPagination(
-          baseApiUrl,
-          apiKey,
-          "/api/v1/fact-metrics",
-          limit,
-          offset,
-          mostRecent,
-          additionalParams,
-        )) as ListFactMetricsResponse;
+        const [metricsData, factMetricData] = (await Promise.all([
+          fetchWithPagination(
+            baseApiUrl,
+            apiKey,
+            "/api/v1/metrics",
+            limit,
+            offset,
+            mostRecent,
+            additionalParams,
+          ),
+          fetchWithPagination(
+            baseApiUrl,
+            apiKey,
+            "/api/v1/fact-metrics",
+            limit,
+            offset,
+            mostRecent,
+            additionalParams,
+          ),
+        ])) as [ListMetricsResponse, ListFactMetricsResponse];
 
         // Reverse arrays for mostRecent to show newest-first
         if (mostRecent && offset === 0) {

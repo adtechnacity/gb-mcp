@@ -40,26 +40,41 @@ Add the MCP server to your AI tool of choice. See the [official docs](https://do
 
 ### Experiments
 
-| Tool                         | Description                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| `create_experiment`          | Create a new A/B test (call `get_defaults` first)                           |
-| `get_experiments`            | List experiments or fetch details (metadata, summary, or full modes)        |
-| `update_experiment`          | Update experiment properties (name, hypothesis, trackingKey, metrics, etc.) |
-| `start_experiment`           | Launch a draft experiment with traffic allocation                           |
-| `stop_experiment`            | Stop a running experiment, optionally declaring a winner                    |
-| `archive_experiment`         | Archive or unarchive an experiment                                          |
-| `refresh_experiment_results` | Trigger a fresh analysis snapshot and return results                        |
-| `get_attributes`             | List user attributes for targeting                                          |
+| Tool                         | Description                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `create_experiment`          | Create a new A/B test (call `get_defaults` first)                                   |
+| `get_experiments`            | List experiments or fetch details (metadata, summary, or full modes)                |
+| `update_experiment`          | Update experiment properties (name, hypothesis, trackingKey, metrics, etc.)         |
+| `start_experiment`           | Launch a draft experiment with traffic allocation                                   |
+| `stop_experiment`            | Stop a running experiment, optionally declaring a winner                            |
+| `archive_experiment`         | Archive or unarchive an experiment                                                  |
+| `refresh_experiment_results` | Trigger a fresh analysis snapshot and return results (supports dimension and phase) |
+| `get_attributes`             | List user attributes for targeting                                                  |
 
 ### Metrics
 
-| Tool                 | Description                                               |
-| -------------------- | --------------------------------------------------------- |
-| `get_metrics`        | List all metrics (fact and legacy)                        |
-| `create_fact_metric` | Create a proportion, mean, quantile, or ratio fact metric |
-| `update_fact_metric` | Update an existing fact metric                            |
-| `list_fact_tables`   | List available fact tables (SQL data sources)             |
-| `list_fact_metrics`  | List fact metrics with configuration details              |
+| Tool                       | Description                                               |
+| -------------------------- | --------------------------------------------------------- |
+| `get_metrics`              | List all metrics (fact and legacy)                        |
+| `create_fact_metric`       | Create a proportion, mean, quantile, or ratio fact metric |
+| `update_fact_metric`       | Update an existing fact metric                            |
+| `delete_fact_metric`       | Delete a fact metric                                      |
+| `list_fact_tables`         | List available fact tables (SQL data sources)             |
+| `create_fact_table`        | Create a new fact table                                   |
+| `update_fact_table`        | Update an existing fact table                             |
+| `delete_fact_table`        | Delete a fact table                                       |
+| `list_fact_metrics`        | List fact metrics with configuration details              |
+| `list_fact_table_filters`  | List filters for a fact table                             |
+| `create_fact_table_filter` | Create a filter on a fact table                           |
+| `delete_fact_table_filter` | Delete a fact table filter                                |
+
+### Dimensions
+
+| Tool               | Description                                         |
+| ------------------ | --------------------------------------------------- |
+| `list_dimensions`  | List dimensions available for experiment breakdowns |
+| `create_dimension` | Create a new dimension for result segmentation      |
+| `delete_dimension` | Delete a dimension                                  |
 
 ### Configuration & Search
 
@@ -113,7 +128,8 @@ src/
     features.ts         # Feature flag tools
     experiments/
       experiments.ts    # Experiment lifecycle tools
-    metrics.ts          # Metrics tools
+    metrics.ts          # Metrics and fact table tools
+    dimensions.ts       # Dimension tools
     defaults.ts         # Experiment defaults
     environments.ts     # Environment listing
     projects.ts         # Project listing

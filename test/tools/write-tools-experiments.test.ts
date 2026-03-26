@@ -549,6 +549,129 @@ describe("refresh_experiment_results", () => {
     expect(resultsUrl).toContain("phase=1");
   });
 
+  it("passes dimension-only without phase in query params", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            snapshot: { id: "snap_1", experiment: "exp_1", status: "running" },
+          },
+        });
+      }
+      if (url.includes("/snapshots/")) {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: { snapshot: { id: "snap_1", status: "success" } },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: { result: { variations: [] } },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "refresh_experiment_results");
+    const p = tool!.handler({ experimentId: "exp_1", dimension: "dim_abc" });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    const resultsCall = fetchSpy.mock.calls.find(
+      ([url]: [string]) => typeof url === "string" && url.includes("/results"),
+    );
+    const resultsUrl = resultsCall![0] as string;
+    expect(resultsUrl).toContain("dimension=dim_abc");
+    expect(resultsUrl).not.toContain("phase=");
+  });
+
+  it("omits JSON block when resultsData.result is null", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            snapshot: { id: "snap_1", experiment: "exp_1", status: "running" },
+          },
+        });
+      }
+      if (url.includes("/snapshots/")) {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: { snapshot: { id: "snap_1", status: "success" } },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: { result: null },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "refresh_experiment_results");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content).toHaveLength(1);
+    expect(res.content[0].text).toContain("refreshed");
+  });
+
+  it("returns error status when snapshot fails", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            snapshot: { id: "snap_1", experiment: "exp_1", status: "running" },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: { snapshot: { id: "snap_1", status: "error" } },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "refresh_experiment_results");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("Error");
+    expect(res.content[0].text).toContain("exp_1");
+  });
+
   it("returns timeout when snapshot stays running", async () => {
     vi.useFakeTimers();
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {

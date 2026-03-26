@@ -85,7 +85,16 @@ export function getAppOrigin() {
  * GB_HTTP_HEADER_X_TENANT_ID=abc123 -> { "X-Tenant-ID": "abc123" }
  * GB_HTTP_HEADER_CF_ACCESS_TOKEN=<token> -> { "Cf-Access-Token": "<token>" }
  */
+let cachedCustomHeaders: Record<string, string> | null = null;
+
+/** @internal Reset cached headers — for testing only */
+export function resetCustomHeadersCache(): void {
+  cachedCustomHeaders = null;
+}
+
 export function getCustomHeaders(): Record<string, string> {
+  if (cachedCustomHeaders) return cachedCustomHeaders;
+
   const customHeaders: Record<string, string> = {};
   const headerPrefix = "GB_HTTP_HEADER_";
 
@@ -112,6 +121,7 @@ export function getCustomHeaders(): Record<string, string> {
     }
   }
 
+  cachedCustomHeaders = customHeaders;
   return customHeaders;
 }
 
@@ -581,9 +591,10 @@ export async function fetchWithRateLimit(
 
   // If rate limited, wait and retry
   if (response.status === 429 && retries > 0) {
-    const resetSeconds = parseInt(
-      response.headers.get("RateLimit-Reset") || "5",
-      10,
+    const MAX_RETRY_SECONDS = 60;
+    const resetSeconds = Math.min(
+      parseInt(response.headers.get("RateLimit-Reset") || "5", 10),
+      MAX_RETRY_SECONDS,
     );
     console.error(
       `Rate limited, waiting ${resetSeconds}s (${retries} retries left)`,

@@ -639,14 +639,17 @@ export function formatSnapshotResult(
     return parts.join("\n");
   }
   if (status === "timeout") {
-    return [
+    const parts = [
       `**Snapshot for \`${experimentId}\` is still processing (timeout).**`,
-      snapshotId ? `Snapshot ID: \`${snapshotId}\` — check back later.` : "",
-      "",
-      `[View in GrowthBook](${link})`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    ];
+    if (snapshotId) {
+      parts.push(`Snapshot ID: \`${snapshotId}\` — check back later.`);
+    }
+    if (dimension) {
+      parts.push(`Requested dimension: \`${dimension}\``);
+    }
+    parts.push("", `[View in GrowthBook](${link})`);
+    return parts.join("\n");
   }
   return `**Error refreshing results for \`${experimentId}\`.** [View in GrowthBook](${link})`;
 }

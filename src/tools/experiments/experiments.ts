@@ -926,6 +926,10 @@ export function registerExperimentTools({
           ),
         phase: z
           .string()
+          .regex(
+            /^\d+$/,
+            "Phase must be a non-negative integer (e.g., '0', '1')",
+          )
           .optional()
           .describe(
             "Phase index to retrieve results for a specific experiment phase (e.g., '0' for the first phase).",
@@ -982,6 +986,7 @@ export function registerExperimentTools({
                   "timeout",
                   appOrigin,
                   snapshotId,
+                  dimension,
                 ),
               },
             ],
@@ -998,6 +1003,7 @@ export function registerExperimentTools({
                   "error",
                   appOrigin,
                   snapshotId,
+                  dimension,
                 ),
               },
             ],
@@ -1016,27 +1022,30 @@ export function registerExperimentTools({
         await handleResNotOk(resultsRes);
         const resultsData = await resultsRes.json();
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: formatSnapshotResult(
-                experimentId,
-                "success",
-                appOrigin,
-                undefined,
-                dimension,
-              ),
-            },
-            {
-              type: "text",
-              text:
-                "```json\n" +
-                JSON.stringify(resultsData.result, null, 2) +
-                "\n```",
-            },
-          ],
-        };
+        const content: { type: "text"; text: string }[] = [
+          {
+            type: "text",
+            text: formatSnapshotResult(
+              experimentId,
+              "success",
+              appOrigin,
+              undefined,
+              dimension,
+            ),
+          },
+        ];
+
+        if (resultsData.result) {
+          content.push({
+            type: "text",
+            text:
+              "```json\n" +
+              JSON.stringify(resultsData.result, null, 2) +
+              "\n```",
+          });
+        }
+
+        return { content };
       } catch (error) {
         throw new Error(
           formatApiError(
