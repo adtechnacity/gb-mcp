@@ -486,13 +486,67 @@ describe("refresh_experiment_results", () => {
 
     const tool = tools.find((t) => t.name === "refresh_experiment_results");
     expect(tool).toBeTruthy();
-    expect(tool!.config.annotations.idempotentHint).toBeUndefined();
+    expect(tool!.config.annotations.idempotentHint).toBe(true);
 
     const p = tool!.handler({ experimentId: "exp_1" });
     await vi.runAllTimersAsync();
     const res = await p;
 
     expect(res.content[0].text).toContain("refreshed");
+  });
+
+  it("passes dimension and phase as query params to results endpoint", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            snapshot: { id: "snap_1", experiment: "exp_1", status: "running" },
+          },
+        });
+      }
+      if (url.includes("/snapshots/")) {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: { snapshot: { id: "snap_1", status: "success" } },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: { result: { variations: [] } },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "refresh_experiment_results");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      dimension: "dim_abc",
+      phase: "1",
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("refreshed");
+    expect(res.content[0].text).toContain("dim_abc");
+
+    const resultsCall = fetchSpy.mock.calls.find(
+      ([url]: [string]) => typeof url === "string" && url.includes("/results"),
+    );
+    expect(resultsCall).toBeTruthy();
+    const resultsUrl = resultsCall![0] as string;
+    expect(resultsUrl).toContain("dimension=dim_abc");
+    expect(resultsUrl).toContain("phase=1");
   });
 
   it("returns timeout when snapshot stays running", async () => {

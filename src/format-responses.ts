@@ -627,14 +627,16 @@ export function formatSnapshotResult(
   status: "success" | "timeout" | "error",
   appOrigin: string,
   snapshotId?: string,
+  dimension?: string,
 ): string {
   const link = generateLinkToGrowthBook(appOrigin, "experiment", experimentId);
   if (status === "success") {
-    return [
-      `**Experiment \`${experimentId}\` results refreshed.**`,
-      "",
-      `[View in GrowthBook](${link})`,
-    ].join("\n");
+    const parts = [`**Experiment \`${experimentId}\` results refreshed.**`];
+    if (dimension) {
+      parts.push(`Dimension breakdown: \`${dimension}\``);
+    }
+    parts.push("", `[View in GrowthBook](${link})`);
+    return parts.join("\n");
   }
   if (status === "timeout") {
     return [

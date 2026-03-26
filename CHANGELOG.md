@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.3] - 2026-03-26
+
+### Added
+
+- `refresh_experiment_results` now supports optional `dimension` and `phase` parameters for dimension-sliced result breakdowns (e.g., by UTM source or country)
+
 ## [1.9.2] - 2026-03-13
 
 ### Added

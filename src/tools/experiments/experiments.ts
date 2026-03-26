@@ -915,13 +915,29 @@ export function registerExperimentTools({
     {
       title: "Refresh Experiment Results",
       description:
-        "Triggers a fresh analysis snapshot for an experiment. Polls for completion and returns the latest results. Safe to call multiple times.",
+        "Triggers a fresh analysis snapshot for an experiment. Polls for completion and returns the latest results. Safe to call multiple times. Optionally pass a dimension ID to get results broken down by dimension (e.g., by country or UTM source). Use list_dimensions to find available dimension IDs.",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
+        dimension: z
+          .string()
+          .optional()
+          .describe(
+            "Dimension ID to break down results (e.g., 'dim_abc123'). Use list_dimensions to find available IDs.",
+          ),
+        phase: z
+          .string()
+          .optional()
+          .describe(
+            "Phase index to retrieve results for a specific experiment phase (e.g., '0' for the first phase).",
+          ),
       }),
-      annotations: { readOnlyHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
     },
-    async ({ experimentId }) => {
+    async ({ experimentId, dimension, phase }) => {
       try {
         const snapshotRes = await fetchWithRateLimit(
           `${baseApiUrl}/api/v1/experiments/${experimentId}/snapshot`,
@@ -988,8 +1004,13 @@ export function registerExperimentTools({
           };
         }
 
+        const resultsParams = new URLSearchParams();
+        if (dimension) resultsParams.set("dimension", dimension);
+        if (phase) resultsParams.set("phase", phase);
+        const resultsQuery = resultsParams.toString();
+
         const resultsRes = await fetchWithRateLimit(
-          `${baseApiUrl}/api/v1/experiments/${experimentId}/results`,
+          `${baseApiUrl}/api/v1/experiments/${experimentId}/results${resultsQuery ? `?${resultsQuery}` : ""}`,
           { headers: buildHeaders(apiKey, false) },
         );
         await handleResNotOk(resultsRes);
@@ -999,7 +1020,13 @@ export function registerExperimentTools({
           content: [
             {
               type: "text",
-              text: formatSnapshotResult(experimentId, "success", appOrigin),
+              text: formatSnapshotResult(
+                experimentId,
+                "success",
+                appOrigin,
+                undefined,
+                dimension,
+              ),
             },
             {
               type: "text",

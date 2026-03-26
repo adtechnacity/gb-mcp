@@ -96,7 +96,7 @@
     },
     {
       "name": "refresh_experiment_results",
-      "description": "Trigger a fresh analysis snapshot for an experiment and return results."
+      "description": "Trigger a fresh analysis snapshot for an experiment and return results. Supports optional dimension and phase parameters for sliced analysis."
     },
     {
       "name": "get_metrics",
