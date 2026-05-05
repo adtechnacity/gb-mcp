@@ -40,16 +40,17 @@ Add the MCP server to your AI tool of choice. See the [official docs](https://do
 
 ### Experiments
 
-| Tool                         | Description                                                                         |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| `create_experiment`          | Create a new A/B test (call `get_defaults` first)                                   |
-| `get_experiments`            | List experiments or fetch details (metadata, summary, or full modes)                |
-| `update_experiment`          | Update experiment properties (name, hypothesis, trackingKey, metrics, etc.)         |
-| `start_experiment`           | Launch a draft experiment with traffic allocation                                   |
-| `stop_experiment`            | Stop a running experiment, optionally declaring a winner                            |
-| `archive_experiment`         | Archive or unarchive an experiment                                                  |
-| `refresh_experiment_results` | Trigger a fresh analysis snapshot and return results (supports dimension and phase) |
-| `get_attributes`             | List user attributes for targeting                                                  |
+| Tool                          | Description                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `create_experiment`           | Create a new A/B test (call `get_defaults` first)                                                                 |
+| `get_experiments`             | List experiments or fetch details (metadata, summary, or full modes)                                              |
+| `update_experiment`           | Update experiment properties (name, hypothesis, trackingKey, metrics, etc.)                                       |
+| `start_experiment`            | Launch a draft experiment with traffic allocation                                                                 |
+| `update_experiment_targeting` | Change targeting on a running experiment without flipping status (defaults to a new phase to keep analysis clean) |
+| `stop_experiment`             | Stop a running experiment, optionally declaring a winner                                                          |
+| `archive_experiment`          | Archive or unarchive an experiment                                                                                |
+| `refresh_experiment_results`  | Trigger a fresh analysis snapshot and return results (supports dimension and phase)                               |
+| `get_attributes`              | List user attributes for targeting                                                                                |
 
 ### Metrics
 

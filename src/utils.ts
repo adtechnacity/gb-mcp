@@ -539,7 +539,7 @@ export const paginationSchema = {
     .boolean()
     .default(false)
     .describe(
-      "When true, fetches the most recent items and returns them newest-first. When false (default), returns oldest items first.",
+      "When true, returns items newest-first. Pagination treats offset as 'from the newest end' — offset=0 returns the most recent N, offset=N returns the next-most-recent N, and so on.",
     ),
 } as const;
 

@@ -11,7 +11,11 @@ import type {
   ListSdkConnectionsResponse,
   CreateSdkConnectionResponse,
 } from "../api-type-helpers.js";
-import { formatSdkConnections, formatEnvironments, formatApiError } from "../format-responses.js";
+import {
+  formatSdkConnections,
+  formatEnvironments,
+  formatApiError,
+} from "../format-responses.js";
 
 interface SdkConnectionTools extends BaseToolsInterface {}
 export function registerSdkConnectionTools({
@@ -31,7 +35,7 @@ export function registerSdkConnectionTools({
       inputSchema: z.object({
         project: z
           .string()
-          .describe("The ID of the project to filter SDK connections by")
+          .describe("Project ID (use get_projects to find IDs).")
           .optional(),
         ...paginationSchema,
       }),
@@ -80,7 +84,7 @@ export function registerSdkConnectionTools({
         name: z
           .string()
           .describe(
-            "Name of the SDK connection in GrowthBook. Should reflect the current project."
+            "Name of the SDK connection in GrowthBook. Should reflect the current project.",
           ),
         language: z
           .enum([
@@ -111,7 +115,9 @@ export function registerSdkConnectionTools({
         environment: z
           .string()
           .optional()
-          .describe("The environment associated with the SDK connection."),
+          .describe(
+            "Environment ID. If omitted, the tool returns available environments and prompts the user to choose one.",
+          ),
         projects: z
           .array(z.string())
           .describe("The projects to create the SDK connection in")
@@ -129,7 +135,7 @@ export function registerSdkConnectionTools({
             `${baseApiUrl}/api/v1/environments`,
             {
               headers: buildHeaders(apiKey),
-            }
+            },
           );
 
           await handleResNotOk(res);
@@ -165,29 +171,30 @@ export function registerSdkConnectionTools({
             method: "POST",
             headers: buildHeaders(apiKey),
             body: JSON.stringify(payload),
-          }
+          },
         );
 
         await handleResNotOk(res);
 
-        const data =
-          (await res.json()) as CreateSdkConnectionResponse;
+        const data = (await res.json()) as CreateSdkConnectionResponse;
 
         const conn = data.sdkConnection;
         const text = conn
           ? `**SDK connection \`${conn.name}\` created.**\nClient key: \`${conn.key}\`\nEnvironment: ${conn.environment}\nLanguage(s): ${conn.languages.join(
-              ", "
+              ", ",
             )}`
           : `SDK connection created.\n${JSON.stringify(data)}`;
         return {
           content: [{ type: "text", text }],
         };
       } catch (error) {
-        throw new Error(formatApiError(error, "creating SDK connection", [
-          "Ensure the environment exists — use get_environments to check available environments.",
-          "Check that the language parameter is a valid SDK language.",
-        ]));
+        throw new Error(
+          formatApiError(error, "creating SDK connection", [
+            "Ensure the environment exists — use get_environments to check available environments.",
+            "Check that the language parameter is a valid SDK language.",
+          ]),
+        );
       }
-    }
+    },
   );
 }

@@ -47,7 +47,7 @@ export function registerMetricsTools({
     {
       title: "Get Metrics",
       description:
-        "Lists metrics in GrowthBook. Metrics measure experiment success (e.g., conversion rate, revenue per user). Two metric types: Fact metrics (IDs start with 'fact__') are modern and recommended for new setups; Legacy metrics are an older format, still supported. Use this to find metric IDs for analyzing experiments or understand available success measures. Single metric fetch includes full definition and GrowthBook link.",
+        "Lists metrics in GrowthBook. Metrics measure experiment success (e.g., conversion rate, revenue per user). Two metric types: Fact metrics (IDs start with 'fact__') are modern and recommended for new setups; Legacy metrics are an older format, still supported. Use this to find metric IDs for analyzing experiments or understand available success measures. Single metric fetch includes full definition and GrowthBook link. When fetching a single metric by ID, the tool auto-routes based on the prefix — agents do not need to choose an endpoint.",
       inputSchema: z.object({
         project: z
           .string()
@@ -168,7 +168,7 @@ export function registerMetricsTools({
     {
       title: "Create Fact Metric",
       description:
-        "Creates a new fact metric. Fact metrics are the modern metric type in GrowthBook, recommended for new setups. Use list_fact_tables to discover available fact table IDs.",
+        "Creates a fact metric (proportion, mean, quantile, ratio, retention, or dailyParticipation). Use list_fact_tables to discover fact table IDs. Ratio metrics require a `denominator` config.",
       inputSchema: z
         .object({
           name: z.string().describe("Metric name"),
@@ -286,7 +286,7 @@ export function registerMetricsTools({
     {
       title: "Update Fact Metric",
       description:
-        "Updates an existing fact metric. Only the provided fields are changed.",
+        "Updates an existing fact metric. Only provided fields change. Use list_fact_metrics or get_metrics to find IDs (must start with 'fact__').",
       inputSchema: z.object({
         metricId: z.string().describe("Fact metric ID (starts with 'fact__')"),
         name: z.string().optional().describe("Updated name"),
@@ -370,7 +370,7 @@ export function registerMetricsTools({
     {
       title: "List Fact Tables",
       description:
-        "Lists available fact tables. Fact tables define the SQL data sources that fact metrics reference. Use this to discover fact table IDs before creating metrics with create_fact_metric.",
+        "Lists available fact tables. Fact tables define the SQL data sources that fact metrics reference. Use this to discover fact table IDs before creating metrics with create_fact_metric. Default page size 100; use offset to paginate.",
       inputSchema: z.object({
         limit: z
           .number()
@@ -423,7 +423,7 @@ export function registerMetricsTools({
     {
       title: "List Fact Metrics",
       description:
-        "Lists fact metrics with their full configuration. Unlike get_metrics which returns both legacy and fact metrics in a summary, this returns only fact metrics with type, numerator, and denominator details.",
+        "Lists fact metrics with their full configuration. Unlike get_metrics which returns both legacy and fact metrics in a summary, this returns only fact metrics with type, numerator, and denominator details. For a single fact metric's full detail, use get_metrics with a metricId starting with 'fact__'.",
       inputSchema: z.object({
         limit: z
           .number()
@@ -592,7 +592,9 @@ export function registerMetricsTools({
                 ),
               datatype: z
                 .enum(["", "boolean", "number", "string", "unknown"])
-                .describe("Column data type"),
+                .describe(
+                  "Column data type. Use '' to leave unset/auto-detect, or one of: boolean, number, string, unknown.",
+                ),
               deleted: z
                 .boolean()
                 .optional()
@@ -605,7 +607,7 @@ export function registerMetricsTools({
           )
           .optional()
           .describe(
-            "Column definitions with names, types, and display settings. Use this to set column datatypes after creating a fact table.",
+            "Column definitions with names, types, and display settings. Use this to set column datatypes after creating a fact table. The `column` field must match a column name from the table's SQL. Existing columns not included in this array are preserved unchanged.",
           ),
         tags: z.array(z.string()).optional(),
         projects: z.array(z.string()).optional(),
@@ -752,7 +754,7 @@ export function registerMetricsTools({
     {
       title: "List Fact Table Filters",
       description:
-        "Lists saved filters on a fact table. Filters are reusable SQL WHERE clause fragments that can be referenced by fact metrics.",
+        "Lists saved filters on a fact table. Filters are reusable SQL WHERE clause fragments that can be referenced by fact metrics. Returns filter IDs that can be used in `numerator.filters` / `denominator.filters` when creating fact metrics.",
       inputSchema: z.object({
         factTableId: z.string().describe("Fact table ID (starts with 'ftb_')"),
         limit: z
@@ -823,7 +825,7 @@ export function registerMetricsTools({
         value: z
           .string()
           .describe(
-            "SQL WHERE clause fragment (e.g., \"event_name = 'purchase'\")",
+            "SQL WHERE clause fragment (e.g., \"event_name = 'purchase'\") — do not prefix with WHERE.",
           ),
         managedBy: z
           .enum(["", "api"])

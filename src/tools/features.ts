@@ -145,7 +145,7 @@ export function registerFeatureTools({
     {
       title: "Create Force Rule",
       description:
-        'Adds a targeting rule to an existing feature flag that forces a specific value when conditions are met. This applies the rule to ALL default environments. For per-environment control, use add_feature_rule instead. Use this for targeting specific users or segments without running an experiment. Example conditions (MongoDB-style syntax): Users in Canada: {"country": "CA"}, Beta testers: {"betaTester": true}, Specific IDs: {"id": {"$in": ["user1", "user2"]}}. Prerequisites: Feature flag must exist - create it first with create_feature_flag if needed. Common operators: $eq, $ne, $in, $nin, $gt, $lt, $regex. Do NOT use for A/B testing - use create_experiment instead for statistical analysis.',
+        'Adds a targeting rule to an existing feature flag that forces a specific value when conditions are met. This applies the rule to ALL default environments. For per-environment control, use add_feature_rule instead. Use this for targeting specific users or segments without running an experiment. Example conditions (MongoDB-style syntax): Users in Canada: {"country": "CA"}, Beta testers: {"betaTester": true}, Specific IDs: {"id": {"$in": ["user1", "user2"]}}. Prerequisites: Feature flag must exist - create it first with create_feature_flag if needed. Common operators: $eq, $ne, $in, $nin, $gt, $lt, $regex. Do NOT use for A/B testing - use create_experiment instead for statistical analysis. Use `get_attributes` to discover available attribute names before writing conditions. The rule is added to your default environments (configurable via `set_user_defaults`).',
       inputSchema: z.object({
         featureId: featureFlagSchema.id,
         description: featureFlagSchema.description.optional().default(""),
@@ -153,7 +153,7 @@ export function registerFeatureTools({
         condition: z
           .string()
           .describe(
-            'MongoDB-style targeting condition. Examples: {"country": "US"}, {"plan": {"$in": ["pro", "enterprise"]}}. Omit to apply to all users.',
+            'MongoDB-style targeting condition as a JSON string. Examples: \'{"country": "US"}\', \'{"plan": {"$in": ["pro", "enterprise"]}}\'. Omit to apply to all users.',
           )
           .optional(),
         value: z
@@ -447,7 +447,7 @@ export function registerFeatureTools({
     {
       title: "Generate Flag Types",
       description:
-        "Generates TypeScript type definitions for all feature flags. Provides type safety and IDE autocomplete when accessing flags in code. Prerequisites: Target project must be TypeScript; GrowthBook CLI installed via npx (automatic). Run after creating new flags or when flag value types change. Returns the generated types file location.",
+        "Generates TypeScript type definitions for all feature flags. **TypeScript projects only** — requires `npx`. Skip if working in Python, Go, Ruby, or other languages. Provides type safety and IDE autocomplete when accessing flags in code.",
       inputSchema: z.object({
         currentWorkingDirectory: z
           .string()
@@ -664,7 +664,7 @@ export function registerFeatureTools({
           .string()
           .optional()
           .describe(
-            'MongoDB-style targeting condition. Example: {"country": "US"}',
+            'MongoDB-style targeting condition as a JSON string. Example: \'{"country": "US"}\'.',
           ),
         coverage: z
           .number()
