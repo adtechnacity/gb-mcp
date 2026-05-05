@@ -17,8 +17,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `update_experiment_targeting` and `resume_experiment` no longer silently drop `targetingCondition` from the request body. The GrowthBook server's update mapper reads `condition` (not `targetingCondition`) on phase items; we now send both field names so the targeting actually persists. Verified against GrowthBook server source.
+- All experiment phase mutations (`update_experiment_targeting`, `resume_experiment`, `stop_experiment`) now send `variationWeights` (the field GrowthBook's mapper reads) instead of the deprecated `trafficSplit`. Previously, weights were silently reset to equal split on every mutation.
 - `stop_experiment` now correctly persists the stop reason. Previously sent `reasonForStopping` on the last phase, but the server reads `reason` — the value was silently dropped.
 - `start_experiment` now always sends `targetingCondition` (defaulting to `"{}"`) so GrowthBook never falls back to a stale server-side default, and validates the value is JSON-parseable before sending.
+- `namespace: null` on `update_experiment_targeting` and `resume_experiment` now actually clears the namespace on the new/patched phase instead of being silently sent to GrowthBook (which would 400 — Zod rejects null). Behavior: omits `namespace` from the new phase entirely.
 
 ## [1.9.3] - 2026-03-26
 

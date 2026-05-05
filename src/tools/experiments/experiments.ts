@@ -39,18 +39,26 @@ import { handleSummaryMode, getMetricLookup } from "./experiment-summary.js";
 interface ExperimentTools extends ExtendedToolsInterface {}
 
 function getPhaseToPostPhase(p: any): Record<string, any> {
+  const condition = p.condition ?? p.targetingCondition ?? "{}";
+  const variationWeights = Array.isArray(p.variationWeights)
+    ? p.variationWeights
+    : Array.isArray(p.trafficSplit)
+      ? p.trafficSplit.map((s: any) => s.weight)
+      : undefined;
   return {
     name: p.name,
     dateStarted: p.dateStarted,
     ...(p.dateEnded ? { dateEnded: p.dateEnded } : {}),
     ...(p.reasonForStopping ? { reason: p.reasonForStopping } : {}),
+    ...(p.reason ? { reason: p.reason } : {}),
     ...(p.seed ? { seed: p.seed } : {}),
     coverage: p.coverage ?? 1,
-    trafficSplit: p.trafficSplit ?? [],
     ...(p.namespace ? { namespace: p.namespace } : {}),
-    targetingCondition: p.targetingCondition ?? "{}",
+    condition,
+    targetingCondition: condition,
     prerequisites: p.prerequisites ?? [],
     savedGroupTargeting: p.savedGroupTargeting ?? [],
+    ...(variationWeights !== undefined ? { variationWeights } : {}),
   };
 }
 
@@ -897,7 +905,7 @@ export function registerExperimentTools({
           .nullable()
           .optional()
           .describe(
-            "Namespace targeting. Pass null to clear an existing namespace.",
+            "Namespace targeting. Pass null to clear an existing namespace on the new/patched phase. The cleared state is the new phase having no namespace at all.",
           ),
         coverage: z
           .number()
@@ -1022,15 +1030,23 @@ export function registerExperimentTools({
         const lastPhasePost = existingPostPhases[existingPostPhases.length - 1];
 
         const overrides: Record<string, any> = {};
-        if (targetingCondition !== undefined)
+        if (targetingCondition !== undefined) {
+          overrides.condition = targetingCondition;
           overrides.targetingCondition = targetingCondition;
+        }
         if (savedGroupTargeting !== undefined)
           overrides.savedGroupTargeting = savedGroupTargeting;
         if (prerequisites !== undefined)
           overrides.prerequisites = prerequisites;
-        if (namespace !== undefined) overrides.namespace = namespace;
+        let clearNamespace = false;
+        if (namespace === null) {
+          clearNamespace = true;
+        } else if (namespace !== undefined) {
+          overrides.namespace = namespace;
+        }
         if (coverage !== undefined) overrides.coverage = coverage;
-        if (trafficSplit !== undefined) overrides.trafficSplit = trafficSplit;
+        if (trafficSplit !== undefined)
+          overrides.variationWeights = trafficSplit.map((s) => s.weight);
 
         const now = new Date().toISOString();
         let phases: any[];
@@ -1046,6 +1062,7 @@ export function registerExperimentTools({
           };
           delete newPhase.dateEnded;
           delete newPhase.reason;
+          if (clearNamespace) delete newPhase.namespace;
           phases = [
             ...existingPostPhases.slice(0, -1),
             previousPhase,
@@ -1053,6 +1070,7 @@ export function registerExperimentTools({
           ];
         } else {
           const patchedPhase = { ...lastPhasePost, ...overrides };
+          if (clearNamespace) delete patchedPhase.namespace;
           phases = [...existingPostPhases.slice(0, -1), patchedPhase];
         }
 
@@ -1265,7 +1283,7 @@ export function registerExperimentTools({
           .nullable()
           .optional()
           .describe(
-            "Namespace targeting for the new phase. Pass null to clear an existing namespace.",
+            "Namespace targeting for the new phase. Pass null to clear an existing namespace on the new/patched phase. The cleared state is the new phase having no namespace at all.",
           ),
         phaseName: z
           .string()
@@ -1341,14 +1359,22 @@ export function registerExperimentTools({
 
         const overrides: Record<string, any> = {};
         if (coverage !== undefined) overrides.coverage = coverage;
-        if (trafficSplit !== undefined) overrides.trafficSplit = trafficSplit;
-        if (targetingCondition !== undefined)
+        if (trafficSplit !== undefined)
+          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+        if (targetingCondition !== undefined) {
+          overrides.condition = targetingCondition;
           overrides.targetingCondition = targetingCondition;
+        }
         if (savedGroupTargeting !== undefined)
           overrides.savedGroupTargeting = savedGroupTargeting;
         if (prerequisites !== undefined)
           overrides.prerequisites = prerequisites;
-        if (namespace !== undefined) overrides.namespace = namespace;
+        let clearNamespace = false;
+        if (namespace === null) {
+          clearNamespace = true;
+        } else if (namespace !== undefined) {
+          overrides.namespace = namespace;
+        }
 
         const lastPhasePost =
           existingPostPhases[existingPostPhases.length - 1] || {};
@@ -1361,6 +1387,7 @@ export function registerExperimentTools({
         };
         delete newPhase.dateEnded;
         delete newPhase.reason;
+        if (clearNamespace) delete newPhase.namespace;
 
         const phases = [...existingPostPhases, newPhase];
 

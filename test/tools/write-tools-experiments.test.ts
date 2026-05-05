@@ -554,7 +554,9 @@ describe("stop_experiment", () => {
     expect(body.phases[0].reason).toBe("Treatment won");
     expect(body.phases[0].reasonForStopping).toBeUndefined();
     expect(body.phases[0].targetingCondition).toBe('{"country":"US"}');
-    expect(body.phases[0].trafficSplit).toHaveLength(2);
+    expect(body.phases[0].condition).toBe('{"country":"US"}');
+    expect(body.phases[0].variationWeights).toEqual([0.5, 0.5]);
+    expect(body.phases[0].trafficSplit).toBeUndefined();
     expect(body.phases[0].prerequisites).toEqual([]);
     expect(body.phases[0].savedGroupTargeting).toEqual([]);
   });
@@ -663,6 +665,74 @@ describe("stop_experiment", () => {
 
     expect(res.content[0].text).toContain("running");
   });
+
+  it("round-trips condition field on all existing phases (server reads condition, not targetingCondition)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "running",
+              type: "standard",
+              variations: [{ variationId: "v0", key: "0", name: "Control" }],
+              phases: [
+                {
+                  name: "Phase 1",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  dateEnded: "2026-03-05T00:00:00Z",
+                  coverage: 1,
+                  variationWeights: [1],
+                  targetingCondition: '{"foo":"bar"}',
+                },
+                {
+                  name: "Phase 2",
+                  dateStarted: "2026-03-05T00:00:00Z",
+                  coverage: 1,
+                  variationWeights: [1],
+                  targetingCondition: '{"baz":"qux"}',
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: { experiment: { id: "exp_1", status: "stopped" } },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "stop_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(2);
+    expect(body.phases[0].condition).toBe('{"foo":"bar"}');
+    expect(body.phases[0].targetingCondition).toBe('{"foo":"bar"}');
+    expect(body.phases[0].variationWeights).toEqual([1]);
+    expect(body.phases[1].condition).toBe('{"baz":"qux"}');
+    expect(body.phases[1].targetingCondition).toBe('{"baz":"qux"}');
+    expect(body.phases[1].variationWeights).toEqual([1]);
+  });
 });
 
 describe("update_experiment_targeting", () => {
@@ -760,7 +830,9 @@ describe("update_experiment_targeting", () => {
     expect(body.phases[1].reasonForStopping).toBeUndefined();
     expect(body.phases[1].name).toBe("Phase 2");
     expect(body.phases[1].targetingCondition).toBe('{"utm_source":"google"}');
-    expect(body.phases[1].trafficSplit).toHaveLength(2);
+    expect(body.phases[1].condition).toBe('{"utm_source":"google"}');
+    expect(body.phases[1].variationWeights).toEqual([0.5, 0.5]);
+    expect(body.phases[1].trafficSplit).toBeUndefined();
     expect(body.phases[1].prerequisites).toEqual([]);
     expect(body.phases[1].savedGroupTargeting).toEqual([]);
   });
@@ -793,7 +865,9 @@ describe("update_experiment_targeting", () => {
     expect(body.phases[0].dateStarted).toBe("2026-03-01T00:00:00Z");
     expect(body.phases[0].coverage).toBe(0.5);
     expect(body.phases[0].targetingCondition).toBe('{"utm_source":"facebook"}');
-    expect(body.phases[0].trafficSplit).toHaveLength(2);
+    expect(body.phases[0].condition).toBe('{"utm_source":"facebook"}');
+    expect(body.phases[0].variationWeights).toEqual([0.5, 0.5]);
+    expect(body.phases[0].trafficSplit).toBeUndefined();
     expect(body.phases[0].prerequisites).toEqual([]);
     expect(body.phases[0].savedGroupTargeting).toEqual([]);
   });
@@ -1071,6 +1145,259 @@ describe("update_experiment_targeting", () => {
     expect(body.phases[2].reasonForStopping).toBeUndefined();
     expect(body.phases[2].dateEnded).toBeUndefined();
   });
+
+  it("sends both condition and targetingCondition on the new phase (server reads condition)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeRunningExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"x":1}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.condition).toBe('{"x":1}');
+    expect(newPhase.targetingCondition).toBe('{"x":1}');
+  });
+
+  it("converts trafficSplit input to variationWeights on the new phase (server ignores trafficSplit)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeRunningExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v0", weight: 0.7 },
+        { variationId: "v1", weight: 0.3 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.variationWeights).toEqual([0.7, 0.3]);
+    expect(newPhase.trafficSplit).toBeUndefined();
+    const previousPhase = body.phases[body.phases.length - 2];
+    expect(previousPhase.variationWeights).toEqual([0.5, 0.5]);
+    expect(previousPhase.trafficSplit).toBeUndefined();
+  });
+
+  it("converts a GET phase with variationWeights to variationWeights on POST", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const json = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "running",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases: [
+          {
+            name: "Phase 1",
+            dateStarted: "2026-03-01T00:00:00Z",
+            coverage: 1,
+            variationWeights: [0.4, 0.6],
+            targetingCondition: '{"x":1}',
+          },
+        ],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, json);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({ experimentId: "exp_1", coverage: 0.9 });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.variationWeights).toEqual([0.4, 0.6]);
+    expect(newPhase.trafficSplit).toBeUndefined();
+  });
+
+  it("namespace=null (patchCurrent) clears existing namespace on the patched phase and never sends namespace:null", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const json = makeRunningExperimentJson([
+      {
+        name: "Phase 1",
+        dateStarted: "2026-03-01T00:00:00Z",
+        coverage: 1,
+        variationWeights: [0.5, 0.5],
+        targetingCondition: '{"x":1}',
+        namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+      },
+    ]);
+    const fetchSpy = makeFetchSpy(calls, json);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      mode: "patchCurrent",
+      namespace: null,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(body.phases[0], "namespace"),
+    ).toBe(false);
+    expect(postCall!.body!).not.toContain('"namespace":null');
+  });
+
+  it("namespace=null (newPhase) clears namespace on the new phase only", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const json = makeRunningExperimentJson([
+      {
+        name: "Phase 1",
+        dateStarted: "2026-03-01T00:00:00Z",
+        coverage: 1,
+        variationWeights: [0.5, 0.5],
+        targetingCondition: '{"x":1}',
+        namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+      },
+    ]);
+    const fetchSpy = makeFetchSpy(calls, json);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      namespace: null,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(2);
+    expect(body.phases[0].namespace).toEqual({
+      namespaceId: "ns_a",
+      range: [0, 0.5],
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(body.phases[1], "namespace"),
+    ).toBe(false);
+    expect(postCall!.body!).not.toContain('"namespace":null');
+  });
+
+  it("namespace omitted preserves existing namespace from lastPhase on the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const json = makeRunningExperimentJson([
+      {
+        name: "Phase 1",
+        dateStarted: "2026-03-01T00:00:00Z",
+        coverage: 1,
+        variationWeights: [0.5, 0.5],
+        targetingCondition: '{"x":1}',
+        namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+      },
+    ]);
+    const fetchSpy = makeFetchSpy(calls, json);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.4,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases[1].namespace).toEqual({
+      namespaceId: "ns_a",
+      range: [0, 0.5],
+    });
+  });
+
+  it("namespace=object sets it on the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeRunningExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      namespace: { namespaceId: "x", range: [0, 0.5] },
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.namespace).toEqual({ namespaceId: "x", range: [0, 0.5] });
+  });
 });
 
 describe("resume_experiment", () => {
@@ -1191,7 +1518,9 @@ describe("resume_experiment", () => {
     expect(body.phases[2].reason).toBeUndefined();
     expect(body.phases[2].reasonForStopping).toBeUndefined();
     expect(body.phases[2].targetingCondition).toBe('{"country":"CA"}');
-    expect(body.phases[2].trafficSplit).toHaveLength(2);
+    expect(body.phases[2].condition).toBe('{"country":"CA"}');
+    expect(body.phases[2].variationWeights).toEqual([0.5, 0.5]);
+    expect(body.phases[2].trafficSplit).toBeUndefined();
   });
 
   it("applies targetingCondition override only to the new phase", async () => {
@@ -1371,6 +1700,133 @@ describe("resume_experiment", () => {
     expect(result.success).toBe(false);
     expect(JSON.stringify(result.error)).toContain("valid JSON");
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("sends both condition and targetingCondition on the new phase (server reads condition)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeStoppedExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"x":1}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.condition).toBe('{"x":1}');
+    expect(newPhase.targetingCondition).toBe('{"x":1}');
+  });
+
+  it("converts trafficSplit input to variationWeights on the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeStoppedExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v0", weight: 0.7 },
+        { variationId: "v1", weight: 0.3 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.variationWeights).toEqual([0.7, 0.3]);
+    expect(newPhase.trafficSplit).toBeUndefined();
+  });
+
+  it("namespace=null clears namespace on the new phase and never sends namespace:null", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const json = makeStoppedExperimentJson([
+      {
+        name: "Phase 1",
+        dateStarted: "2026-03-01T00:00:00Z",
+        dateEnded: "2026-03-05T00:00:00Z",
+        coverage: 1,
+        variationWeights: [0.5, 0.5],
+        targetingCondition: '{"x":1}',
+        namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+      },
+    ]);
+    const fetchSpy = makeFetchSpy(calls, json);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      namespace: null,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(2);
+    expect(body.phases[0].namespace).toEqual({
+      namespaceId: "ns_a",
+      range: [0, 0.5],
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(body.phases[1], "namespace"),
+    ).toBe(false);
+    expect(postCall!.body!).not.toContain('"namespace":null');
+  });
+
+  it("namespace=object sets it on the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeStoppedExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      namespace: { namespaceId: "x", range: [0, 0.5] },
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.namespace).toEqual({ namespaceId: "x", range: [0, 0.5] });
   });
 });
 
