@@ -1073,6 +1073,307 @@ describe("update_experiment_targeting", () => {
   });
 });
 
+describe("resume_experiment", () => {
+  function makeStoppedExperimentJson(
+    phases: any[] = [
+      {
+        name: "Phase 1",
+        dateStarted: "2026-03-01T00:00:00Z",
+        dateEnded: "2026-03-05T00:00:00Z",
+        reasonForStopping: "Initial run",
+        coverage: 0.8,
+        trafficSplit: [
+          { variationId: "v0", weight: 0.5 },
+          { variationId: "v1", weight: 0.5 },
+        ],
+        targetingCondition: '{"country":"US"}',
+      },
+      {
+        name: "Phase 2",
+        dateStarted: "2026-03-05T00:00:00Z",
+        dateEnded: "2026-03-10T00:00:00Z",
+        reasonForStopping: "Treatment won",
+        coverage: 1,
+        trafficSplit: [
+          { variationId: "v0", weight: 0.5 },
+          { variationId: "v1", weight: 0.5 },
+        ],
+        targetingCondition: '{"country":"CA"}',
+      },
+    ],
+  ) {
+    return {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "stopped",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases,
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+  }
+
+  function makeFetchSpy(
+    calls: Array<{ url: string; method?: string; body?: string }>,
+    initialJson: any,
+  ) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({ ok: true, status: 200, json: initialJson });
+      }
+      return makeResponse({ ok: true, status: 200, json: initialJson });
+    });
+  }
+
+  it("is registered with readOnlyHint: false", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn());
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    expect(tool).toBeTruthy();
+    expect(tool!.config.annotations.readOnlyHint).toBe(false);
+    expect(tool!.config.annotations.destructiveHint).toBe(false);
+    expect(tool!.config.annotations.idempotentHint).toBeUndefined();
+  });
+
+  it("sets status to running, converts existing phases, appends auto-named new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeStoppedExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const before = new Date().toISOString();
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    const res = await p;
+    const after = new Date().toISOString();
+
+    expect(res.content[0].text).toContain("resumed");
+
+    const postCall = calls.find((c) => c.method === "POST");
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(postCall!.body!);
+    expect(body.status).toBe("running");
+    expect(body.phases).toHaveLength(3);
+
+    expect(body.phases[0].reason).toBe("Initial run");
+    expect(body.phases[0].reasonForStopping).toBeUndefined();
+    expect(body.phases[0].dateEnded).toBe("2026-03-05T00:00:00Z");
+    expect(body.phases[0].targetingCondition).toBe('{"country":"US"}');
+
+    expect(body.phases[1].reason).toBe("Treatment won");
+    expect(body.phases[1].reasonForStopping).toBeUndefined();
+    expect(body.phases[1].dateEnded).toBe("2026-03-10T00:00:00Z");
+    expect(body.phases[1].targetingCondition).toBe('{"country":"CA"}');
+
+    expect(body.phases[2].name).toBe("Phase 3");
+    expect(body.phases[2].dateStarted >= before).toBe(true);
+    expect(body.phases[2].dateStarted <= after).toBe(true);
+    expect(body.phases[2].dateEnded).toBeUndefined();
+    expect(body.phases[2].reason).toBeUndefined();
+    expect(body.phases[2].reasonForStopping).toBeUndefined();
+    expect(body.phases[2].targetingCondition).toBe('{"country":"CA"}');
+    expect(body.phases[2].trafficSplit).toHaveLength(2);
+  });
+
+  it("applies targetingCondition override only to the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeStoppedExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const newCondition = '{"plan":"pro"}';
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: newCondition,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(3);
+    expect(body.phases[0].targetingCondition).toBe('{"country":"US"}');
+    expect(body.phases[1].targetingCondition).toBe('{"country":"CA"}');
+    expect(body.phases[2].targetingCondition).toBe(newCondition);
+  });
+
+  it("honors a custom phaseName", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeStoppedExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      phaseName: "Relaunch with refined audience",
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases[body.phases.length - 1].name).toBe(
+      "Relaunch with refined audience",
+    );
+  });
+
+  it("rejects when status is running", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" }).catch((e: any) => e);
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res).not.toBeInstanceOf(Error);
+    expect(res.content[0].text).toContain("already running");
+    expect(res.content[0].text).toContain("update_experiment_targeting");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects when status is draft", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "draft",
+            variations: [],
+            phases: [],
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" }).catch((e: any) => e);
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res).not.toBeInstanceOf(Error);
+    expect(res.content[0].text).toContain("never launched");
+    expect(res.content[0].text).toContain("start_experiment");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("validates trafficSplit (weights must sum to 1)", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: makeStoppedExperimentJson(),
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v0", weight: 0.3 },
+        { variationId: "v1", weight: 0.3 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("Invalid trafficSplit");
+  });
+
+  it("rejects malformed targetingCondition JSON via Zod before any HTTP call", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "resume_experiment");
+    const schema = tool!.config.inputSchema;
+    const result = schema.safeParse({
+      experimentId: "exp_1",
+      targetingCondition: "{not valid json",
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error)).toContain("valid JSON");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("refresh_experiment_results", () => {
   it("creates snapshot and returns success when complete", async () => {
     vi.useFakeTimers();

@@ -87,6 +87,10 @@
       "description": "Launch a draft experiment into running status with traffic allocation."
     },
     {
+      "name": "resume_experiment",
+      "description": "Resume a stopped experiment back to running status by appending a new phase, optionally with refined targeting."
+    },
+    {
       "name": "update_experiment_targeting",
       "description": "Change targeting on a running experiment (conditions, saved groups, prerequisites, namespace, coverage, traffic split). Defaults to appending a new phase to keep analysis clean."
     },

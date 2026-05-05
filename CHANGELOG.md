@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - `update_experiment_targeting` — change targeting on a running experiment without flipping its status. Defaults to appending a new phase so the previous data segment stays clean for analysis; supports targeting condition, saved groups, prerequisites, namespace, coverage, and traffic split
+- `resume_experiment` — relaunch a stopped experiment back to running status by appending a new phase. Optionally apply targeting/coverage/trafficSplit overrides to the resumed phase.
 
 ### Changed
 

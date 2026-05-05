@@ -25,6 +25,7 @@ import {
   formatExperimentUpdated,
   formatExperimentStarted,
   formatExperimentStopped,
+  formatExperimentResumed,
   formatExperimentArchived,
   formatExperimentTargetingUpdated,
   formatSnapshotResult,
@@ -1189,6 +1190,204 @@ export function registerExperimentTools({
           formatApiError(error, `stopping experiment '${experimentId}'`, [
             "The experiment must be in 'running' status.",
             "Use get_experiments to check the current status and find variation IDs.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
+   * Tool: resume_experiment
+   */
+  server.registerTool(
+    "resume_experiment",
+    {
+      title: "Resume Experiment",
+      description:
+        "Resumes a stopped experiment back to running status by appending a new phase. Optionally accepts targeting/coverage/trafficSplit overrides for the new phase — useful when resuming with a refined audience. Use start_experiment for drafts, update_experiment_targeting for already-running experiments. Common pattern: stop_experiment to pause, then resume_experiment to relaunch with adjusted parameters.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        coverage: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("Traffic coverage 0-1 for the new phase."),
+        trafficSplit: z
+          .array(
+            z.object({
+              variationId: z.string(),
+              weight: z.number().min(0).max(1),
+            }),
+          )
+          .optional()
+          .describe(
+            "Variation weights for the new phase. Each variation must appear exactly once and weights must sum to 1.",
+          ),
+        targetingCondition: jsonStringSchema(
+          'targetingCondition must be a valid JSON string (e.g., \'{"country":"US"}\')',
+        )
+          .optional()
+          .describe(
+            "MongoDB-style targeting condition for the new phase, as a JSON string.",
+          ),
+        savedGroupTargeting: z
+          .array(
+            z.object({
+              matchType: z.enum(["all", "any", "none"]),
+              savedGroups: z.array(z.string()),
+            }),
+          )
+          .optional()
+          .describe("Saved group targeting rules for the new phase."),
+        prerequisites: z
+          .array(
+            z.object({
+              id: z.string(),
+              condition: jsonStringSchema(
+                "prerequisites[].condition must be a valid JSON string",
+              ).describe(
+                "MongoDB-style condition as a JSON string evaluated against the prerequisite flag's value.",
+              ),
+            }),
+          )
+          .optional()
+          .describe("Prerequisite feature flags with conditions."),
+        namespace: z
+          .object({
+            namespaceId: z.string(),
+            range: z
+              .array(z.unknown())
+              .describe(
+                "Two-number tuple [start, end] with values 0-1, e.g. [0, 0.5]",
+              ),
+          })
+          .nullable()
+          .optional()
+          .describe(
+            "Namespace targeting for the new phase. Pass null to clear an existing namespace.",
+          ),
+        phaseName: z
+          .string()
+          .optional()
+          .describe("Override auto-generated phase name."),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({
+      experimentId,
+      coverage,
+      trafficSplit,
+      targetingCondition,
+      savedGroupTargeting,
+      prerequisites,
+      namespace,
+      phaseName,
+    }) => {
+      try {
+        const getRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          { headers: buildHeaders(apiKey) },
+        );
+        await handleResNotOk(getRes);
+        const getData = await getRes.json();
+        const experiment = getData.experiment;
+
+        if (experiment.status !== "stopped") {
+          let message: string;
+          if (experiment.status === "running") {
+            message =
+              "Experiment is already running. Use update_experiment_targeting to change targeting without flipping status.";
+          } else if (experiment.status === "draft") {
+            message =
+              "Experiment has never launched. Use start_experiment to launch a draft.";
+          } else {
+            message = `Cannot resume — current status is '${experiment.status}'. Only 'stopped' experiments can be resumed.`;
+          }
+          return { content: [{ type: "text", text: message }] };
+        }
+
+        if (trafficSplit) {
+          const validVariationIds = new Set(
+            experiment.variations.map((v: any) => v.variationId),
+          );
+          const uniqueSplitIds = new Set(
+            trafficSplit.map((v: any) => v.variationId),
+          );
+          const totalWeight = trafficSplit.reduce(
+            (sum: number, v: any) => sum + v.weight,
+            0,
+          );
+
+          if (
+            trafficSplit.length !== uniqueSplitIds.size ||
+            uniqueSplitIds.size !== experiment.variations.length ||
+            [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
+            Math.abs(totalWeight - 1) > 1e-6
+          ) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Invalid trafficSplit. Provide each variation exactly once (no duplicates) and ensure the weights sum to 1.",
+                },
+              ],
+            };
+          }
+        }
+
+        const existingPhases = [...(experiment.phases || [])];
+        const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
+
+        const overrides: Record<string, any> = {};
+        if (coverage !== undefined) overrides.coverage = coverage;
+        if (trafficSplit !== undefined) overrides.trafficSplit = trafficSplit;
+        if (targetingCondition !== undefined)
+          overrides.targetingCondition = targetingCondition;
+        if (savedGroupTargeting !== undefined)
+          overrides.savedGroupTargeting = savedGroupTargeting;
+        if (prerequisites !== undefined)
+          overrides.prerequisites = prerequisites;
+        if (namespace !== undefined) overrides.namespace = namespace;
+
+        const lastPhasePost =
+          existingPostPhases[existingPostPhases.length - 1] || {};
+        const now = new Date().toISOString();
+        const newPhase: Record<string, any> = {
+          ...lastPhasePost,
+          ...overrides,
+          name: phaseName ?? `Phase ${existingPhases.length + 1}`,
+          dateStarted: now,
+        };
+        delete newPhase.dateEnded;
+        delete newPhase.reason;
+
+        const phases = [...existingPostPhases, newPhase];
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ status: "running", phases }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentResumed(data, appOrigin),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `resuming experiment '${experimentId}'`, [
+            "The experiment must be in 'stopped' status.",
+            "Use get_experiments to check the current status.",
+            "If trafficSplit is provided, weights must sum to 1 and cover every variation exactly once.",
           ]),
         );
       }

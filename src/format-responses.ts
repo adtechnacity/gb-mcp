@@ -592,6 +592,43 @@ export function formatExperimentStarted(
   ].join("\n");
 }
 
+export function formatExperimentResumed(
+  data: UpdateExperimentResponse,
+  appOrigin: string,
+): string {
+  const e = data.experiment;
+  if (!e?.id) return "Experiment resumed, but details unavailable.";
+
+  const phases = e.phases || [];
+  const phaseCount = phases.length;
+  const newPhase = phases[phases.length - 1];
+
+  const parts: string[] = [
+    `**Experiment \`${e.id}\` resumed.**`,
+    `Status is now **running**.`,
+  ];
+
+  if (newPhase) {
+    const details: string[] = [`phase ${phaseCount}`];
+    if (newPhase.name) details.push(`name: \`${newPhase.name}\``);
+    if (newPhase.coverage != null)
+      details.push(`coverage: ${(newPhase.coverage * 100).toFixed(0)}%`);
+    if (newPhase.trafficSplit?.length) {
+      const traffic = newPhase.trafficSplit
+        .map((t: any) => `${t.variationId}: ${(t.weight * 100).toFixed(0)}%`)
+        .join(", ");
+      details.push(`trafficSplit: ${traffic}`);
+    }
+    if (newPhase.targetingCondition && newPhase.targetingCondition !== "{}")
+      details.push(`condition: ${newPhase.targetingCondition}`);
+    parts.push(`New phase — ${details.join("; ")}`);
+  }
+
+  parts.push("");
+  parts.push(formatExperimentDetail(data as any, appOrigin));
+  return parts.join("\n");
+}
+
 export function formatExperimentStopped(
   data: UpdateExperimentResponse,
   appOrigin: string,
