@@ -20,7 +20,7 @@ const experimentDefaultsDir = paths.config; // This is the recommended config di
 
 const experimentDefaultsFile = join(
   experimentDefaultsDir,
-  "experiment-defaults.json"
+  "experiment-defaults.json",
 );
 
 const userDefaultsFile = join(experimentDefaultsDir, "user-defaults.json");
@@ -71,14 +71,14 @@ interface UserDefaults {
 
 export async function createDefaults(
   apiKey: string,
-  baseApiUrl: string
+  baseApiUrl: string,
 ): Promise<ExperimentDefaultsResult> {
   try {
     const experimentsResponse = await fetchWithRateLimit(
       `${baseApiUrl}/api/v1/experiments`,
       {
         headers: buildHeaders(apiKey, false),
-      }
+      },
     );
     await handleResNotOk(experimentsResponse);
     const experimentData =
@@ -90,7 +90,7 @@ export async function createDefaults(
         `${baseApiUrl}/api/v1/data-sources`,
         {
           headers: buildHeaders(apiKey, false),
-        }
+        },
       );
       await handleResNotOk(assignmentQueryResponse);
       const dataSourceData =
@@ -98,7 +98,7 @@ export async function createDefaults(
 
       if (dataSourceData.dataSources?.length === 0) {
         throw new Error(
-          "No data source or assignment query found. Experiments require a data source/assignment query. Set these up in the GrowthBook and try again."
+          "No data source or assignment query found. Experiments require a data source/assignment query. Set these up in the GrowthBook and try again.",
         );
       }
 
@@ -109,13 +109,13 @@ export async function createDefaults(
         `${baseApiUrl}/api/v1/environments`,
         {
           headers: buildHeaders(apiKey, false),
-        }
+        },
       );
       await handleResNotOk(environmentsResponse);
       const environmentsData =
         (await environmentsResponse.json()) as ListEnvironmentsResponse;
       const environments: string[] = (environmentsData.environments || []).map(
-        ({ id }: { id: string }) => id
+        ({ id }: { id: string }) => id,
       );
 
       return {
@@ -138,16 +138,20 @@ export async function createDefaults(
       const mostRecentExperiments = await fetchWithRateLimit(
         `${baseApiUrl}/api/v1/experiments?offset=${
           experimentData.total! -
-          Math.min(50, (experimentData.count ?? 0) + (experimentData.offset ?? 0))
+          Math.min(
+            50,
+            (experimentData.count ?? 0) + (experimentData.offset ?? 0),
+          )
         }&limit=${Math.min(50, (experimentData.count ?? 0) + (experimentData.offset ?? 0))}`,
         {
           headers: buildHeaders(apiKey),
-        }
+        },
       );
       await handleResNotOk(mostRecentExperiments);
       const mostRecentExperimentData =
         (await mostRecentExperiments.json()) as ListExperimentsResponse;
-      experiments = (mostRecentExperimentData.experiments || []) as Experiment[];
+      experiments = (mostRecentExperimentData.experiments ||
+        []) as Experiment[];
     } else {
       experiments = (experimentData.experiments || []) as Experiment[];
     }
@@ -181,7 +185,7 @@ export async function createDefaults(
           hypothesis: [],
           description: [],
           datasource: {},
-        }
+        },
       );
 
     // Find the most frequent datasource/assignmentQuery pair
@@ -209,13 +213,13 @@ export async function createDefaults(
       `${baseApiUrl}/api/v1/environments`,
       {
         headers: buildHeaders(apiKey, false),
-      }
+      },
     );
     await handleResNotOk(environmentsResponse);
     const environmentsData =
       (await environmentsResponse.json()) as ListEnvironmentsResponse;
     const environments: string[] = (environmentsData.environments || []).map(
-      ({ id }: { id: string }) => id
+      ({ id }: { id: string }) => id,
     );
 
     return {
@@ -250,7 +254,7 @@ async function getUserDefaults(): Promise<UserDefaults | null> {
 
 export async function getDefaults(
   apiKey: string,
-  baseApiUrl: string
+  baseApiUrl: string,
 ): Promise<ExperimentDefaultsResult> {
   // First check for user-defined defaults
   const userDefaults = await getUserDefaults();
@@ -268,7 +272,7 @@ export async function getDefaults(
       // Try to get existing auto-generated defaults for name/hypothesis/description
       const experimentDefaultsData = await readFile(
         experimentDefaultsFile,
-        "utf8"
+        "utf8",
       );
       const parsedExperimentDefaults = JSON.parse(experimentDefaultsData);
 
@@ -288,7 +292,7 @@ export async function getDefaults(
         await mkdir(experimentDefaultsDir, { recursive: true });
         await writeFile(
           experimentDefaultsFile,
-          JSON.stringify(generatedDefaults)
+          JSON.stringify(generatedDefaults),
         );
         autoDefaults = {
           name: generatedDefaults.name,
@@ -303,7 +307,7 @@ export async function getDefaults(
         await mkdir(experimentDefaultsDir, { recursive: true });
         await writeFile(
           experimentDefaultsFile,
-          JSON.stringify(generatedDefaults)
+          JSON.stringify(generatedDefaults),
         );
         autoDefaults = {
           name: generatedDefaults.name,
@@ -334,7 +338,7 @@ export async function getDefaults(
   try {
     const experimentDefaultsData = await readFile(
       experimentDefaultsFile,
-      "utf8"
+      "utf8",
     );
     let parsedExperimentDefaults = JSON.parse(experimentDefaultsData);
     if (
@@ -344,13 +348,13 @@ export async function getDefaults(
     ) {
       const generatedExperimentDefaults = await createDefaults(
         apiKey,
-        baseApiUrl
+        baseApiUrl,
       );
 
       await mkdir(experimentDefaultsDir, { recursive: true });
       await writeFile(
         experimentDefaultsFile,
-        JSON.stringify(generatedExperimentDefaults)
+        JSON.stringify(generatedExperimentDefaults),
       );
       parsedExperimentDefaults = generatedExperimentDefaults;
     }
@@ -360,13 +364,13 @@ export async function getDefaults(
       // experimentDefaultsFile does not exist, generate new defaults
       const generatedExperimentDefaults = await createDefaults(
         apiKey,
-        baseApiUrl
+        baseApiUrl,
       );
 
       await mkdir(experimentDefaultsDir, { recursive: true });
       await writeFile(
         experimentDefaultsFile,
-        JSON.stringify(generatedExperimentDefaults)
+        JSON.stringify(generatedExperimentDefaults),
       );
       experimentDefaults = generatedExperimentDefaults;
     } else {
@@ -390,7 +394,7 @@ export async function registerDefaultsTools({
     {
       title: "Get Defaults",
       description:
-        "Retrieves default configuration and naming examples for creating experiments. Analyzes your existing experiments to extract patterns and identifies your most common datasource/assignment query. Always call this before create_experiment - the examples help ensure new experiments follow your organization's conventions. Returns example names, hypotheses, descriptions from existing experiments, default datasource and assignment query IDs, and available environments. User-defined defaults (from set_user_defaults) override automatic detection.",
+        "REQUIRED before create_experiment. Returns example names, hypotheses, and descriptions from your existing experiments plus default datasource, assignment query, and environment IDs. Use the examples to align new experiments with your team's naming conventions.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -406,7 +410,7 @@ export async function registerDefaultsTools({
           },
         ],
       };
-    }
+    },
   );
 
   server.registerTool(
@@ -416,7 +420,9 @@ export async function registerDefaultsTools({
       description:
         "Sets custom default values for experiment configuration that override automatic detection. Use when automatic defaults select the wrong datasource or assignment query. Find valid IDs by calling get_defaults first. Persists until cleared with clear_user_defaults.",
       inputSchema: z.object({
-        datasourceId: z.string().describe("The data source ID to use as default"),
+        datasourceId: z
+          .string()
+          .describe("The data source ID to use as default"),
         assignmentQueryId: z
           .string()
           .describe("The assignment query ID to use as default"),
@@ -426,7 +432,8 @@ export async function registerDefaultsTools({
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
       },
     },
     async ({ datasourceId, assignmentQueryId, environments }) => {
@@ -449,7 +456,7 @@ export async function registerDefaultsTools({
               text: `User defaults have been saved:\n\n${JSON.stringify(
                 userDefaults,
                 null,
-                2
+                2,
               )} to ${userDefaultsFile}\n\nThese will be used when creating new experiments.`,
             },
           ],
@@ -457,18 +464,20 @@ export async function registerDefaultsTools({
       } catch (error) {
         throw new Error(`Error setting user defaults: ${error}`);
       }
-    }
+    },
   );
 
   server.registerTool(
     "clear_user_defaults",
     {
       title: "Clear User Defaults",
-      description: "Clear user-defined defaults and revert to automatic defaults.",
+      description:
+        "Clears user-defined experiment defaults set by set_user_defaults and reverts to automatic detection. Call get_defaults afterward to see the auto-detected datasource/assignment query.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
       },
     },
     async () => {
@@ -498,6 +507,6 @@ export async function registerDefaultsTools({
         }
         throw new Error(`Error clearing user defaults: ${error}`);
       }
-    }
+    },
   );
 }

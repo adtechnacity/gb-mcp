@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-05-05
+
+### Added
+
+- `update_experiment_targeting` — change targeting on a running experiment without flipping its status. Defaults to appending a new phase so the previous data segment stays clean for analysis; supports targeting condition, saved groups, prerequisites, namespace, coverage, and traffic split
+- `resume_experiment` — relaunch a stopped experiment back to running status by appending a new phase. Optionally apply targeting/coverage/trafficSplit overrides to the resumed phase.
+
+### Changed
+
+- `mostRecent` pagination now correctly returns newest-first across all pages (previously only page 0 was reversed). Callers using `mostRecent: true` with `offset > 0` will see different ordering — the new behavior matches the natural reading of the option.
+- Tightened LLM-facing descriptions on ~15 tools to lead with prerequisites, cross-reference companion tools, and clarify when MongoDB-style conditions must be passed as JSON strings.
+- `set_user_defaults` and `clear_user_defaults` no longer use `destructiveHint: true` (they only touch local config; restoring is trivial). Hosts will stop gating these behind destructive-action confirmation dialogs.
+
+### Fixed
+
+- `update_experiment_targeting` and `resume_experiment` no longer silently drop `targetingCondition` from the request body. The GrowthBook server's update mapper reads `condition` (not `targetingCondition`) on phase items; we now send both field names so the targeting actually persists. Verified against GrowthBook server source.
+- All experiment phase mutations (`update_experiment_targeting`, `resume_experiment`, `stop_experiment`) now send `variationWeights` (the field GrowthBook's mapper reads) instead of the deprecated `trafficSplit`. Previously, weights were silently reset to equal split on every mutation.
+- `stop_experiment` now correctly persists the stop reason. Previously sent `reasonForStopping` on the last phase, but the server reads `reason` — the value was silently dropped.
+- `start_experiment` now always sends `targetingCondition` (defaulting to `"{}"`) so GrowthBook never falls back to a stale server-side default, and validates the value is JSON-parseable before sending.
+- `namespace: null` on `update_experiment_targeting` and `resume_experiment` now actually clears the namespace on the new/patched phase instead of being silently sent to GrowthBook (which would 400 — Zod rejects null). Behavior: omits `namespace` from the new phase entirely.
+
 ## [1.9.3] - 2026-03-26
 
 ### Added

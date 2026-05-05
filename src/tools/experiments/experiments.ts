@@ -25,7 +25,9 @@ import {
   formatExperimentUpdated,
   formatExperimentStarted,
   formatExperimentStopped,
+  formatExperimentResumed,
   formatExperimentArchived,
+  formatExperimentTargetingUpdated,
   formatSnapshotResult,
   formatAttributes,
   formatApiError,
@@ -35,6 +37,40 @@ import { type Experiment } from "../../types/types.js";
 import { handleSummaryMode, getMetricLookup } from "./experiment-summary.js";
 
 interface ExperimentTools extends ExtendedToolsInterface {}
+
+function getPhaseToPostPhase(p: any): Record<string, any> {
+  const condition = p.condition ?? p.targetingCondition ?? "{}";
+  const variationWeights = Array.isArray(p.variationWeights)
+    ? p.variationWeights
+    : Array.isArray(p.trafficSplit)
+      ? p.trafficSplit.map((s: any) => s.weight)
+      : undefined;
+  return {
+    name: p.name,
+    dateStarted: p.dateStarted,
+    ...(p.dateEnded ? { dateEnded: p.dateEnded } : {}),
+    ...(p.reasonForStopping ? { reason: p.reasonForStopping } : {}),
+    ...(p.reason ? { reason: p.reason } : {}),
+    ...(p.seed ? { seed: p.seed } : {}),
+    coverage: p.coverage ?? 1,
+    ...(p.namespace ? { namespace: p.namespace } : {}),
+    condition,
+    targetingCondition: condition,
+    prerequisites: p.prerequisites ?? [],
+    savedGroupTargeting: p.savedGroupTargeting ?? [],
+    ...(variationWeights !== undefined ? { variationWeights } : {}),
+  };
+}
+
+const jsonStringSchema = (errorMsg: string) =>
+  z.string().refine((s) => {
+    try {
+      JSON.parse(s);
+      return true;
+    } catch {
+      return false;
+    }
+  }, errorMsg);
 
 export function registerExperimentTools({
   server,
@@ -205,13 +241,6 @@ export function registerExperimentTools({
         let experiments: Experiment[] =
           (data.experiments as Experiment[]) || [];
 
-        // Reverse experiments array for mostRecent to show newest-first
-        if (mostRecent && offset === 0 && Array.isArray(experiments)) {
-          experiments = experiments.reverse();
-          data.experiments =
-            experiments as ListExperimentsResponse["experiments"];
-        }
-
         if (mode === "full" || mode === "summary") {
           await reportProgress(2, "Fetching experiment results...");
           for (const [index, experiment] of experiments.entries()) {
@@ -351,7 +380,9 @@ export function registerExperimentTools({
           ),
         valueType: z
           .enum(["string", "number", "boolean", "json"])
-          .describe("The value type for all experiment variations"),
+          .describe(
+            "Value type for all variations (string|number|boolean|json). Must match the feature flag's valueType when featureId is provided.",
+          ),
         variations: z
           .array(
             z.object({
@@ -545,7 +576,7 @@ export function registerExperimentTools({
     {
       title: "Update Experiment",
       description:
-        "Updates properties of an existing experiment. Only the provided fields are changed. For lifecycle changes, use start_experiment, stop_experiment, or archive_experiment instead.",
+        "Updates properties of an existing experiment. Only the provided fields are changed. For lifecycle changes, use start_experiment, stop_experiment, or archive_experiment instead. For targeting (conditions, traffic split, coverage, namespace, prerequisites) on running experiments, use update_experiment_targeting.",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         name: z.string().optional().describe("Updated name"),
@@ -560,19 +591,30 @@ export function registerExperimentTools({
           ),
         owner: z.string().optional().describe("Owner email"),
         project: z.string().optional().describe("Move to project"),
-        metrics: z.array(z.string()).optional().describe("Goal metric IDs"),
+        metrics: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Goal metric IDs (use get_metrics or list_fact_metrics to find IDs)",
+          ),
         guardrailMetrics: z
           .array(z.string())
           .optional()
-          .describe("Guardrail metric IDs"),
+          .describe(
+            "Guardrail metric IDs (use get_metrics or list_fact_metrics to find IDs)",
+          ),
         secondaryMetrics: z
           .array(z.string())
           .optional()
-          .describe("Secondary metric IDs"),
+          .describe(
+            "Secondary metric IDs (use get_metrics or list_fact_metrics to find IDs)",
+          ),
         activationMetric: z
           .string()
           .optional()
-          .describe("Activation metric ID"),
+          .describe(
+            "Activation metric ID (use get_metrics or list_fact_metrics to find IDs)",
+          ),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
@@ -672,7 +714,7 @@ export function registerExperimentTools({
     {
       title: "Start Experiment",
       description:
-        "Launches a draft experiment into 'running' status. The experiment must be in 'draft' status. Use get_experiments to check status first. Use update_experiment to configure metrics before launching.",
+        "Launches a draft experiment into 'running' status. The experiment must be in 'draft' status. Use get_experiments to check status first. Use update_experiment to configure metrics before launching. After launch, use update_experiment_targeting to change targeting without flipping status.",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         coverage: z
@@ -693,10 +735,13 @@ export function registerExperimentTools({
           .describe(
             "Custom traffic split. Defaults to equal split across all variations.",
           ),
-        targetingCondition: z
-          .string()
+        targetingCondition: jsonStringSchema(
+          'targetingCondition must be a valid JSON string (e.g., \'{"country":"US"}\')',
+        )
           .optional()
-          .describe("MongoDB-style targeting for experiment entry"),
+          .describe(
+            'MongoDB-style targeting condition for experiment entry, as a JSON string. Example: \'{"country": "US"}\'.',
+          ),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
@@ -769,7 +814,7 @@ export function registerExperimentTools({
           dateStarted: new Date().toISOString(),
           coverage: coverage ?? 1.0,
           trafficSplit: split,
-          ...(targetingCondition && { targetingCondition }),
+          targetingCondition: targetingCondition ?? "{}",
         };
 
         const res = await fetchWithRateLimit(
@@ -805,6 +850,269 @@ export function registerExperimentTools({
   );
 
   /**
+   * Tool: update_experiment_targeting
+   */
+  server.registerTool(
+    "update_experiment_targeting",
+    {
+      title: "Update Experiment Targeting",
+      description:
+        "Changes targeting on a running experiment without flipping its status. Use this when you need to swap targeting conditions, saved groups, prerequisites, namespace, traffic coverage, or variation weights mid-flight (e.g., change a UTM source filter on a Facebook experiment). Defaults to mode='newPhase' which appends a new phase — recommended for clean analysis since the previous data segment stays intact. Use mode='patchCurrent' only for typo fixes or pre-launch tweaks. Contrast with update_experiment (no targeting/phase fields) and start_experiment (only works on draft).",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        mode: z
+          .enum(["newPhase", "patchCurrent"])
+          .default("newPhase")
+          .describe(
+            "newPhase appends a new phase preserving the old data segment (recommended for mid-experiment targeting changes). patchCurrent mutates the current phase in place — use only for typo fixes or pre-launch tweaks.",
+          ),
+        targetingCondition: jsonStringSchema(
+          'targetingCondition must be a valid JSON string (e.g., \'{"country":"US"}\')',
+        )
+          .optional()
+          .describe("MongoDB-style targeting condition as a JSON string."),
+        savedGroupTargeting: z
+          .array(
+            z.object({
+              matchType: z.enum(["all", "any", "none"]),
+              savedGroups: z.array(z.string()),
+            }),
+          )
+          .optional()
+          .describe("Saved group targeting rules."),
+        prerequisites: z
+          .array(
+            z.object({
+              id: z.string(),
+              condition: jsonStringSchema(
+                "prerequisites[].condition must be a valid JSON string",
+              ).describe(
+                "MongoDB-style condition as a JSON string evaluated against the prerequisite flag's value.",
+              ),
+            }),
+          )
+          .optional()
+          .describe("Prerequisite feature flags with conditions."),
+        namespace: z
+          .object({
+            namespaceId: z.string(),
+            range: z
+              .array(z.unknown())
+              .describe(
+                "Two-number tuple [start, end] with values 0-1 representing the namespace bucket range, e.g. [0, 0.5] for the first half.",
+              ),
+          })
+          .nullable()
+          .optional()
+          .describe(
+            "Namespace targeting. Pass null to clear an existing namespace on the new/patched phase. The cleared state is the new phase having no namespace at all.",
+          ),
+        coverage: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("Traffic coverage 0-1."),
+        trafficSplit: z
+          .array(
+            z.object({
+              variationId: z.string(),
+              weight: z.number().min(0).max(1),
+            }),
+          )
+          .optional()
+          .describe(
+            "Variation weights. Each variation must appear exactly once and weights must sum to 1.",
+          ),
+        phaseName: z
+          .string()
+          .optional()
+          .describe(
+            "Override auto-generated phase name. Only meaningful when mode='newPhase'.",
+          ),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({
+      experimentId,
+      mode,
+      targetingCondition,
+      savedGroupTargeting,
+      prerequisites,
+      namespace,
+      coverage,
+      trafficSplit,
+      phaseName,
+    }) => {
+      const hasUpdate =
+        targetingCondition !== undefined ||
+        savedGroupTargeting !== undefined ||
+        prerequisites !== undefined ||
+        namespace !== undefined ||
+        coverage !== undefined ||
+        trafficSplit !== undefined;
+
+      if (!hasUpdate) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No targeting fields to update. Provide at least one of: targetingCondition, savedGroupTargeting, prerequisites, namespace, coverage, trafficSplit.",
+            },
+          ],
+        };
+      }
+
+      const resolvedMode = mode ?? "newPhase";
+
+      try {
+        const getRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          { headers: buildHeaders(apiKey) },
+        );
+        await handleResNotOk(getRes);
+        const getData = await getRes.json();
+        const experiment = getData.experiment;
+
+        if (experiment.status !== "running") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Cannot update targeting — current status is '${experiment.status}'. Only 'running' experiments support mid-flight targeting changes. Use start_experiment for drafts or update_experiment for non-targeting fields.`,
+              },
+            ],
+          };
+        }
+
+        const existingPhases = [...(experiment.phases || [])];
+        if (existingPhases.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Cannot update targeting — experiment has no existing phases. Use start_experiment first.",
+              },
+            ],
+          };
+        }
+
+        if (trafficSplit) {
+          const validVariationIds = new Set(
+            experiment.variations.map((v: any) => v.variationId),
+          );
+          const uniqueSplitIds = new Set(
+            trafficSplit.map((v: any) => v.variationId),
+          );
+          const totalWeight = trafficSplit.reduce(
+            (sum: number, v: any) => sum + v.weight,
+            0,
+          );
+
+          if (
+            trafficSplit.length !== uniqueSplitIds.size ||
+            uniqueSplitIds.size !== experiment.variations.length ||
+            [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
+            Math.abs(totalWeight - 1) > 1e-6
+          ) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Invalid trafficSplit. Provide each variation exactly once (no duplicates) and ensure the weights sum to 1.",
+                },
+              ],
+            };
+          }
+        }
+
+        const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
+        const lastPhasePost = existingPostPhases[existingPostPhases.length - 1];
+
+        const overrides: Record<string, any> = {};
+        if (targetingCondition !== undefined) {
+          overrides.condition = targetingCondition;
+          overrides.targetingCondition = targetingCondition;
+        }
+        if (savedGroupTargeting !== undefined)
+          overrides.savedGroupTargeting = savedGroupTargeting;
+        if (prerequisites !== undefined)
+          overrides.prerequisites = prerequisites;
+        let clearNamespace = false;
+        if (namespace === null) {
+          clearNamespace = true;
+        } else if (namespace !== undefined) {
+          overrides.namespace = namespace;
+        }
+        if (coverage !== undefined) overrides.coverage = coverage;
+        if (trafficSplit !== undefined)
+          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+
+        const now = new Date().toISOString();
+        let phases: any[];
+
+        if (resolvedMode === "newPhase") {
+          const previousPhase = { ...lastPhasePost, dateEnded: now };
+          const nextPhaseNumber = existingPostPhases.length + 1;
+          const newPhase: Record<string, any> = {
+            ...lastPhasePost,
+            ...overrides,
+            name: phaseName || `Phase ${nextPhaseNumber}`,
+            dateStarted: now,
+          };
+          delete newPhase.dateEnded;
+          delete newPhase.reason;
+          if (clearNamespace) delete newPhase.namespace;
+          phases = [
+            ...existingPostPhases.slice(0, -1),
+            previousPhase,
+            newPhase,
+          ];
+        } else {
+          const patchedPhase = { ...lastPhasePost, ...overrides };
+          if (clearNamespace) delete patchedPhase.namespace;
+          phases = [...existingPostPhases.slice(0, -1), patchedPhase];
+        }
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ phases }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentTargetingUpdated(
+                data,
+                appOrigin,
+                resolvedMode,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(
+            error,
+            `updating targeting for experiment '${experimentId}'`,
+            [
+              "The experiment must be in 'running' status.",
+              "Use get_experiments to check status and current phase configuration.",
+              "If trafficSplit is provided, weights must sum to 1 and cover every variation exactly once.",
+            ],
+          ),
+        );
+      }
+    },
+  );
+
+  /**
    * Tool: stop_experiment
    */
   server.registerTool(
@@ -812,7 +1120,7 @@ export function registerExperimentTools({
     {
       title: "Stop Experiment",
       description:
-        "Stops a running experiment. To declare a winner, provide the releasedVariationId — use get_experiments with the experimentId first to see available variation IDs and their names.",
+        "Stops a running experiment. To declare a winner, provide the releasedVariationId — use get_experiments with the experimentId first to see available variation IDs and their names. Set excludeFromPayload=true only when you're sure no SDK clients should see the experiment again — typically after a winner is declared.",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         releasedVariationId: z
@@ -859,12 +1167,11 @@ export function registerExperimentTools({
           };
         }
 
-        const phases = [...(experiment.phases || [])];
+        const phases = (experiment.phases || []).map(getPhaseToPostPhase);
         if (phases.length > 0) {
-          const lastPhase = { ...phases[phases.length - 1] };
+          const lastPhase = phases[phases.length - 1];
           lastPhase.dateEnded = new Date().toISOString();
-          if (reason) lastPhase.reasonForStopping = reason;
-          phases[phases.length - 1] = lastPhase;
+          if (reason) lastPhase.reason = reason;
         }
 
         const payload: Record<string, any> = { status: "stopped", phases };
@@ -908,6 +1215,213 @@ export function registerExperimentTools({
   );
 
   /**
+   * Tool: resume_experiment
+   */
+  server.registerTool(
+    "resume_experiment",
+    {
+      title: "Resume Experiment",
+      description:
+        "Resumes a stopped experiment back to running status by appending a new phase. Optionally accepts targeting/coverage/trafficSplit overrides for the new phase — useful when resuming with a refined audience. Use start_experiment for drafts, update_experiment_targeting for already-running experiments. Common pattern: stop_experiment to pause, then resume_experiment to relaunch with adjusted parameters.",
+      inputSchema: z.object({
+        experimentId: z.string().describe("Experiment ID"),
+        coverage: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("Traffic coverage 0-1 for the new phase."),
+        trafficSplit: z
+          .array(
+            z.object({
+              variationId: z.string(),
+              weight: z.number().min(0).max(1),
+            }),
+          )
+          .optional()
+          .describe(
+            "Variation weights for the new phase. Each variation must appear exactly once and weights must sum to 1.",
+          ),
+        targetingCondition: jsonStringSchema(
+          'targetingCondition must be a valid JSON string (e.g., \'{"country":"US"}\')',
+        )
+          .optional()
+          .describe(
+            "MongoDB-style targeting condition for the new phase, as a JSON string.",
+          ),
+        savedGroupTargeting: z
+          .array(
+            z.object({
+              matchType: z.enum(["all", "any", "none"]),
+              savedGroups: z.array(z.string()),
+            }),
+          )
+          .optional()
+          .describe("Saved group targeting rules for the new phase."),
+        prerequisites: z
+          .array(
+            z.object({
+              id: z.string(),
+              condition: jsonStringSchema(
+                "prerequisites[].condition must be a valid JSON string",
+              ).describe(
+                "MongoDB-style condition as a JSON string evaluated against the prerequisite flag's value.",
+              ),
+            }),
+          )
+          .optional()
+          .describe("Prerequisite feature flags with conditions."),
+        namespace: z
+          .object({
+            namespaceId: z.string(),
+            range: z
+              .array(z.unknown())
+              .describe(
+                "Two-number tuple [start, end] with values 0-1, e.g. [0, 0.5]",
+              ),
+          })
+          .nullable()
+          .optional()
+          .describe(
+            "Namespace targeting for the new phase. Pass null to clear an existing namespace on the new/patched phase. The cleared state is the new phase having no namespace at all.",
+          ),
+        phaseName: z
+          .string()
+          .optional()
+          .describe("Override auto-generated phase name."),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+    },
+    async ({
+      experimentId,
+      coverage,
+      trafficSplit,
+      targetingCondition,
+      savedGroupTargeting,
+      prerequisites,
+      namespace,
+      phaseName,
+    }) => {
+      try {
+        const getRes = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          { headers: buildHeaders(apiKey) },
+        );
+        await handleResNotOk(getRes);
+        const getData = await getRes.json();
+        const experiment = getData.experiment;
+
+        if (experiment.status !== "stopped") {
+          let message: string;
+          if (experiment.status === "running") {
+            message =
+              "Experiment is already running. Use update_experiment_targeting to change targeting without flipping status.";
+          } else if (experiment.status === "draft") {
+            message =
+              "Experiment has never launched. Use start_experiment to launch a draft.";
+          } else {
+            message = `Cannot resume — current status is '${experiment.status}'. Only 'stopped' experiments can be resumed.`;
+          }
+          return { content: [{ type: "text", text: message }] };
+        }
+
+        if (trafficSplit) {
+          const validVariationIds = new Set(
+            experiment.variations.map((v: any) => v.variationId),
+          );
+          const uniqueSplitIds = new Set(
+            trafficSplit.map((v: any) => v.variationId),
+          );
+          const totalWeight = trafficSplit.reduce(
+            (sum: number, v: any) => sum + v.weight,
+            0,
+          );
+
+          if (
+            trafficSplit.length !== uniqueSplitIds.size ||
+            uniqueSplitIds.size !== experiment.variations.length ||
+            [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
+            Math.abs(totalWeight - 1) > 1e-6
+          ) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Invalid trafficSplit. Provide each variation exactly once (no duplicates) and ensure the weights sum to 1.",
+                },
+              ],
+            };
+          }
+        }
+
+        const existingPhases = [...(experiment.phases || [])];
+        const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
+
+        const overrides: Record<string, any> = {};
+        if (coverage !== undefined) overrides.coverage = coverage;
+        if (trafficSplit !== undefined)
+          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+        if (targetingCondition !== undefined) {
+          overrides.condition = targetingCondition;
+          overrides.targetingCondition = targetingCondition;
+        }
+        if (savedGroupTargeting !== undefined)
+          overrides.savedGroupTargeting = savedGroupTargeting;
+        if (prerequisites !== undefined)
+          overrides.prerequisites = prerequisites;
+        let clearNamespace = false;
+        if (namespace === null) {
+          clearNamespace = true;
+        } else if (namespace !== undefined) {
+          overrides.namespace = namespace;
+        }
+
+        const lastPhasePost =
+          existingPostPhases[existingPostPhases.length - 1] || {};
+        const now = new Date().toISOString();
+        const newPhase: Record<string, any> = {
+          ...lastPhasePost,
+          ...overrides,
+          name: phaseName ?? `Phase ${existingPhases.length + 1}`,
+          dateStarted: now,
+        };
+        delete newPhase.dateEnded;
+        delete newPhase.reason;
+        if (clearNamespace) delete newPhase.namespace;
+
+        const phases = [...existingPostPhases, newPhase];
+
+        const res = await fetchWithRateLimit(
+          `${baseApiUrl}/api/v1/experiments/${experimentId}`,
+          {
+            method: "POST",
+            headers: buildHeaders(apiKey),
+            body: JSON.stringify({ status: "running", phases }),
+          },
+        );
+        await handleResNotOk(res);
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatExperimentResumed(data, appOrigin),
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(
+          formatApiError(error, `resuming experiment '${experimentId}'`, [
+            "The experiment must be in 'stopped' status.",
+            "Use get_experiments to check the current status.",
+            "If trafficSplit is provided, weights must sum to 1 and cover every variation exactly once.",
+          ]),
+        );
+      }
+    },
+  );
+
+  /**
    * Tool: refresh_experiment_results
    */
   server.registerTool(
@@ -915,7 +1429,7 @@ export function registerExperimentTools({
     {
       title: "Refresh Experiment Results",
       description:
-        "Triggers a fresh analysis snapshot for an experiment. Polls for completion and returns the latest results. Safe to call multiple times. Optionally pass a dimension ID to get results broken down by dimension (e.g., by country or UTM source). Use list_dimensions to find available dimension IDs.",
+        "Triggers a fresh analysis snapshot for an experiment. Polls for completion and returns the latest results. Safe to call multiple times. Optionally pass a dimension ID to get results broken down by dimension (e.g., by country or UTM source). Use list_dimensions to find available dimension IDs. Pass a phase index ('0', '1', ...) to inspect results from a specific experiment phase (useful after update_experiment_targeting created new phases).",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         dimension: z

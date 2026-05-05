@@ -30,7 +30,12 @@ export function registerDimensionTools({
       description:
         "Lists dimensions available for experiment result breakdowns. Dimensions are SQL-based queries tied to a datasource that segment experiment results (e.g., by country, device type). Optionally filter by datasource ID.",
       inputSchema: z.object({
-        datasourceId: z.string().optional().describe("Filter by datasource ID"),
+        datasourceId: z
+          .string()
+          .optional()
+          .describe(
+            "Filter by datasource ID. Find datasource IDs via get_defaults.",
+          ),
         limit: z
           .number()
           .min(1)
@@ -84,7 +89,7 @@ export function registerDimensionTools({
     {
       title: "Create Dimension",
       description:
-        "Creates a dimension for segmenting experiment results. A dimension is a SQL query that returns user_id and value columns, used to break down experiment metrics (e.g., by country, device type, plan tier).",
+        "Creates a dimension for segmenting experiment results. A dimension is a SQL query that returns user_id and value columns, used to break down experiment metrics (e.g., by country, device type, plan tier). Find a valid datasourceId from get_defaults (returns the default), or by inspecting existing dimensions via list_dimensions.",
       inputSchema: z.object({
         name: z.string().describe("Dimension name (e.g., 'Country')"),
         description: z.string().optional().describe("Description"),
@@ -97,7 +102,7 @@ export function registerDimensionTools({
         query: z
           .string()
           .describe(
-            "SQL query returning two columns: the user identifier and the dimension value",
+            "SQL query returning two columns named to match identifierType (e.g., 'user_id') and 'value' (the dimension value).",
           ),
         owner: z
           .string()

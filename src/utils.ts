@@ -539,7 +539,7 @@ export const paginationSchema = {
     .boolean()
     .default(false)
     .describe(
-      "When true, fetches the most recent items and returns them newest-first. When false (default), returns oldest items first.",
+      "When true, returns items newest-first. Pagination treats offset as 'from the newest end' — offset=0 returns the most recent N, offset=N returns the next-most-recent N, and so on.",
     ),
 } as const;
 
@@ -681,14 +681,12 @@ export async function fetchWithPagination(
   mostRecent: boolean,
   additionalParams?: Record<string, string>,
 ): Promise<any> {
-  // Default behavior: use provided limit and offset
-  if (!mostRecent || offset > 0) {
+  if (!mostRecent) {
     const queryParams = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     });
 
-    // Add any additional query parameters
     if (additionalParams) {
       Object.entries(additionalParams).forEach(([key, value]) => {
         if (value) {
@@ -708,9 +706,18 @@ export async function fetchWithPagination(
     return await res.json();
   }
 
-  // Most recent behavior: fetch total count first, then calculate offset
+  const countQueryParams = new URLSearchParams({ limit: "1" });
+
+  if (additionalParams) {
+    Object.entries(additionalParams).forEach(([key, value]) => {
+      if (value) {
+        countQueryParams.append(key, value);
+      }
+    });
+  }
+
   const countRes = await fetchWithRateLimit(
-    `${baseApiUrl}${endpoint}?limit=1`,
+    `${baseApiUrl}${endpoint}?${countQueryParams.toString()}`,
     {
       headers: buildHeaders(apiKey),
     },
@@ -718,15 +725,26 @@ export async function fetchWithPagination(
 
   await handleResNotOk(countRes);
   const countData = await countRes.json();
-  const total = countData.total;
-  const calculatedOffset = Math.max(0, total - limit);
+  const total = countData.total ?? 0;
+  const effectiveLimit = Math.min(limit, total - offset);
+
+  if (effectiveLimit <= 0) {
+    const emptyData: Record<string, any> = { ...countData, total };
+    for (const key of Object.keys(emptyData)) {
+      if (Array.isArray(emptyData[key])) {
+        emptyData[key] = [];
+      }
+    }
+    return emptyData;
+  }
+
+  const calculatedOffset = Math.max(0, total - offset - effectiveLimit);
 
   const mostRecentQueryParams = new URLSearchParams({
-    limit: limit.toString(),
+    limit: effectiveLimit.toString(),
     offset: calculatedOffset.toString(),
   });
 
-  // Add any additional query parameters
   if (additionalParams) {
     Object.entries(additionalParams).forEach(([key, value]) => {
       if (value) {
@@ -743,7 +761,15 @@ export async function fetchWithPagination(
   );
 
   await handleResNotOk(mostRecentRes);
-  return await mostRecentRes.json();
+  const data = await mostRecentRes.json();
+
+  for (const key of Object.keys(data)) {
+    if (Array.isArray(data[key])) {
+      data[key] = [...data[key]].reverse();
+    }
+  }
+
+  return data;
 }
 
 export function formatList(items: string[]): string {
