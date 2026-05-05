@@ -325,10 +325,147 @@ describe("start_experiment", () => {
     const res2 = await p2;
     expect(res2.content[0].text).toContain("Invalid trafficSplit");
   });
+
+  it("passes through valid targetingCondition into the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v1", key: "1", name: "Treatment" },
+              ],
+              phases: [],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"country":"US"}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases[0].targetingCondition).toBe('{"country":"US"}');
+  });
+
+  it("defaults targetingCondition to '{}' when not provided", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v1", key: "1", name: "Treatment" },
+              ],
+              phases: [],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases[0].targetingCondition).toBe("{}");
+  });
+
+  it("rejects malformed targetingCondition JSON via Zod before any HTTP call", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const schema = tool!.config.inputSchema;
+    const result = schema.safeParse({
+      experimentId: "exp_1",
+      targetingCondition: "{not valid json",
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error)).toContain("valid JSON");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("stop_experiment", () => {
-  it("sets status to stopped with winner and closes last phase", async () => {
+  it("sets status to stopped with winner and closes last phase using reason field", async () => {
     vi.useFakeTimers();
     const calls: Array<{ url: string; method?: string; body?: string }> = [];
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
@@ -348,7 +485,16 @@ describe("stop_experiment", () => {
                 { variationId: "v1", key: "1", name: "Treatment" },
               ],
               phases: [
-                { name: "Phase 1", dateStarted: "2026-03-01T00:00:00Z" },
+                {
+                  name: "Phase 1",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  coverage: 1,
+                  trafficSplit: [
+                    { variationId: "v0", weight: 0.5 },
+                    { variationId: "v1", weight: 0.5 },
+                  ],
+                  targetingCondition: '{"country":"US"}',
+                },
               ],
               settings: { goals: [], guardrails: [], secondaryMetrics: [] },
             },
@@ -405,7 +551,85 @@ describe("stop_experiment", () => {
     expect(body.status).toBe("stopped");
     expect(body.releasedVariationId).toBe("v1");
     expect(body.phases[0].dateEnded).toBeTruthy();
-    expect(body.phases[0].reasonForStopping).toBe("Treatment won");
+    expect(body.phases[0].reason).toBe("Treatment won");
+    expect(body.phases[0].reasonForStopping).toBeUndefined();
+    expect(body.phases[0].targetingCondition).toBe('{"country":"US"}');
+    expect(body.phases[0].trafficSplit).toHaveLength(2);
+    expect(body.phases[0].prerequisites).toEqual([]);
+    expect(body.phases[0].savedGroupTargeting).toEqual([]);
+  });
+
+  it("converts all existing phases through GET→POST shape converter", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "running",
+              type: "standard",
+              variations: [{ variationId: "v0", key: "0", name: "Control" }],
+              phases: [
+                {
+                  name: "Phase 1",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  dateEnded: "2026-03-05T00:00:00Z",
+                  reasonForStopping: "old reason",
+                  coverage: 0.5,
+                  trafficSplit: [{ variationId: "v0", weight: 1 }],
+                  targetingCondition: '{"foo":"bar"}',
+                },
+                {
+                  name: "Phase 2",
+                  dateStarted: "2026-03-05T00:00:00Z",
+                  coverage: 1,
+                  trafficSplit: [{ variationId: "v0", weight: 1 }],
+                  targetingCondition: '{"baz":"qux"}',
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: { experiment: { id: "exp_1", status: "stopped" } },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "stop_experiment");
+    const p = tool!.handler({ experimentId: "exp_1", reason: "done" });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(2);
+
+    expect(body.phases[0].reason).toBe("old reason");
+    expect(body.phases[0].reasonForStopping).toBeUndefined();
+    expect(body.phases[0].dateEnded).toBe("2026-03-05T00:00:00Z");
+    expect(body.phases[0].targetingCondition).toBe('{"foo":"bar"}');
+
+    expect(body.phases[1].reason).toBe("done");
+    expect(body.phases[1].reasonForStopping).toBeUndefined();
+    expect(body.phases[1].dateEnded).toBeTruthy();
+    expect(body.phases[1].targetingCondition).toBe('{"baz":"qux"}');
   });
 
   it("rejects non-running experiments", async () => {
@@ -438,6 +662,414 @@ describe("stop_experiment", () => {
     const res = await p;
 
     expect(res.content[0].text).toContain("running");
+  });
+});
+
+describe("update_experiment_targeting", () => {
+  function makeRunningExperimentJson(
+    phases: any[] = [
+      {
+        name: "Phase 1",
+        dateStarted: "2026-03-01T00:00:00Z",
+        coverage: 1,
+        trafficSplit: [
+          { variationId: "v0", weight: 0.5 },
+          { variationId: "v1", weight: 0.5 },
+        ],
+        targetingCondition: '{"utm_source":"facebook"}',
+      },
+    ],
+  ) {
+    return {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "running",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases,
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+  }
+
+  function makeFetchSpy(
+    calls: Array<{ url: string; method?: string; body?: string }>,
+    initialJson: any,
+  ) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({ ok: true, status: 200, json: initialJson });
+      }
+      return makeResponse({ ok: true, status: 200, json: initialJson });
+    });
+  }
+
+  it("is registered with readOnlyHint: false", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn());
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    expect(tool).toBeTruthy();
+    expect(tool!.config.annotations.readOnlyHint).toBe(false);
+    expect(tool!.config.annotations.destructiveHint).toBe(false);
+    expect(tool!.config.annotations.idempotentHint).toBeUndefined();
+  });
+
+  it("newPhase mode appends a phase, ends previous, omits status", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeRunningExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"utm_source":"google"}',
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("targeting updated");
+
+    const postCall = calls.find((c) => c.method === "POST");
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(postCall!.body!);
+    expect(body.status).toBeUndefined();
+    expect(body.phases).toHaveLength(2);
+    expect(body.phases[0].dateEnded).toBeTruthy();
+    expect(body.phases[0].reasonForStopping).toBeUndefined();
+    expect(body.phases[1].dateStarted).toBeTruthy();
+    expect(body.phases[1].dateEnded).toBeUndefined();
+    expect(body.phases[1].reason).toBeUndefined();
+    expect(body.phases[1].reasonForStopping).toBeUndefined();
+    expect(body.phases[1].name).toBe("Phase 2");
+    expect(body.phases[1].targetingCondition).toBe('{"utm_source":"google"}');
+    expect(body.phases[1].trafficSplit).toHaveLength(2);
+    expect(body.phases[1].prerequisites).toEqual([]);
+    expect(body.phases[1].savedGroupTargeting).toEqual([]);
+  });
+
+  it("patchCurrent mode mutates current phase in place without new dateStarted", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeRunningExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      mode: "patchCurrent",
+      coverage: 0.5,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.status).toBeUndefined();
+    expect(body.phases).toHaveLength(1);
+    expect(body.phases[0].dateStarted).toBe("2026-03-01T00:00:00Z");
+    expect(body.phases[0].coverage).toBe(0.5);
+    expect(body.phases[0].targetingCondition).toBe('{"utm_source":"facebook"}');
+    expect(body.phases[0].trafficSplit).toHaveLength(2);
+    expect(body.phases[0].prerequisites).toEqual([]);
+    expect(body.phases[0].savedGroupTargeting).toEqual([]);
+  });
+
+  it("rejects when status is draft", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "draft",
+            variations: [],
+            phases: [],
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.5,
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("draft");
+    expect(res.content[0].text).toContain("running");
+  });
+
+  it("rejects when status is stopped", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "stopped",
+            variations: [],
+            phases: [],
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.5,
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("stopped");
+  });
+
+  it("rejects when no targeting fields provided", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("No targeting fields");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("validates trafficSplit (weights must sum to 1)", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: makeRunningExperimentJson(),
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v0", weight: 0.3 },
+        { variationId: "v1", weight: 0.3 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("Invalid trafficSplit");
+  });
+
+  it("round-trips targetingCondition into the new phase", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = makeFetchSpy(calls, makeRunningExperimentJson());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const condition = '{"country":{"$in":["US","CA"]}}';
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: condition,
+      phaseName: "Geo expansion",
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const newPhase = body.phases[body.phases.length - 1];
+    expect(newPhase.targetingCondition).toBe(condition);
+    expect(newPhase.name).toBe("Geo expansion");
+  });
+
+  it("rejects malformed targetingCondition JSON via Zod before any HTTP call", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const schema = tool!.config.inputSchema;
+    const result = schema.safeParse({
+      experimentId: "exp_1",
+      targetingCondition: "{not valid json",
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error)).toContain("valid JSON");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed prerequisites[].condition JSON via Zod", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const schema = tool!.config.inputSchema;
+    const result = schema.safeParse({
+      experimentId: "exp_1",
+      prerequisites: [{ id: "prereq_1", condition: "not json" }],
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error)).toContain("valid JSON");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("converts a GET phase with reasonForStopping into POST shape with reason", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const json = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "running",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases: [
+          {
+            name: "Phase 1",
+            dateStarted: "2026-01-01T00:00:00Z",
+            dateEnded: "2026-02-01T00:00:00Z",
+            reasonForStopping: "old reason",
+            coverage: 0.8,
+            trafficSplit: [
+              { variationId: "v0", weight: 0.5 },
+              { variationId: "v1", weight: 0.5 },
+            ],
+            targetingCondition: '{"region":"NA"}',
+            seed: "seed-abc",
+          },
+          {
+            name: "Phase 2",
+            dateStarted: "2026-02-01T00:00:00Z",
+            coverage: 1,
+            trafficSplit: [
+              { variationId: "v0", weight: 0.5 },
+              { variationId: "v1", weight: 0.5 },
+            ],
+            targetingCondition: '{"region":"EU"}',
+          },
+        ],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, json);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.6,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+
+    expect(body.phases).toHaveLength(3);
+
+    expect(body.phases[0].reason).toBe("old reason");
+    expect(body.phases[0].reasonForStopping).toBeUndefined();
+    expect(body.phases[0].dateEnded).toBe("2026-02-01T00:00:00Z");
+    expect(body.phases[0].seed).toBe("seed-abc");
+    expect(body.phases[0].targetingCondition).toBe('{"region":"NA"}');
+
+    expect(body.phases[1].dateEnded).toBeTruthy();
+    expect(body.phases[1].targetingCondition).toBe('{"region":"EU"}');
+
+    expect(body.phases[2].coverage).toBe(0.6);
+    expect(body.phases[2].targetingCondition).toBe('{"region":"EU"}');
+    expect(body.phases[2].reason).toBeUndefined();
+    expect(body.phases[2].reasonForStopping).toBeUndefined();
+    expect(body.phases[2].dateEnded).toBeUndefined();
   });
 });
 

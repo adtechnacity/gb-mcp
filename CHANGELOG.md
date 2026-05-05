@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `update_experiment_targeting` — change targeting on a running experiment without flipping its status. Defaults to appending a new phase so the previous data segment stays clean for analysis; supports targeting condition, saved groups, prerequisites, namespace, coverage, and traffic split
+
+### Changed
+
+- `mostRecent` pagination now correctly returns newest-first across all pages (previously only page 0 was reversed). Callers using `mostRecent: true` with `offset > 0` will see different ordering — the new behavior matches the natural reading of the option.
+- Tightened LLM-facing descriptions on ~15 tools to lead with prerequisites, cross-reference companion tools, and clarify when MongoDB-style conditions must be passed as JSON strings.
+- `set_user_defaults` and `clear_user_defaults` no longer use `destructiveHint: true` (they only touch local config; restoring is trivial). Hosts will stop gating these behind destructive-action confirmation dialogs.
+
+### Fixed
+
+- `stop_experiment` now correctly persists the stop reason. Previously sent `reasonForStopping` on the last phase, but the server reads `reason` — the value was silently dropped.
+- `start_experiment` now always sends `targetingCondition` (defaulting to `"{}"`) so GrowthBook never falls back to a stale server-side default, and validates the value is JSON-parseable before sending.
+
 ## [1.9.3] - 2026-03-26
 
 ### Added

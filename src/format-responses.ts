@@ -622,6 +622,46 @@ export function formatExperimentArchived(
   return `**Experiment \`${experimentId}\` ${archived ? "archived" : "unarchived"}.**`;
 }
 
+export function formatExperimentTargetingUpdated(
+  data: UpdateExperimentResponse,
+  appOrigin: string,
+  mode: "newPhase" | "patchCurrent",
+): string {
+  const e = data.experiment;
+  if (!e?.id) return "Experiment targeting updated, but details unavailable.";
+
+  const phases = e.phases || [];
+  const phaseCount = phases.length;
+  const currentPhase = phases[phases.length - 1];
+
+  const parts: string[] = [
+    `**Experiment \`${e.id}\` targeting updated.**`,
+    mode === "newPhase"
+      ? `Appended new phase (now at ${phaseCount} phase${phaseCount === 1 ? "" : "s"}).`
+      : `Patched current phase in place (phase ${phaseCount}).`,
+  ];
+
+  if (currentPhase) {
+    const details: string[] = [];
+    if (currentPhase.name) details.push(`name: \`${currentPhase.name}\``);
+    if (currentPhase.coverage != null)
+      details.push(`coverage: ${(currentPhase.coverage * 100).toFixed(0)}%`);
+    if (currentPhase.trafficSplit?.length) {
+      const traffic = currentPhase.trafficSplit
+        .map((t: any) => `${t.variationId}: ${(t.weight * 100).toFixed(0)}%`)
+        .join(", ");
+      details.push(`trafficSplit: ${traffic}`);
+    }
+    if (currentPhase.targetingCondition)
+      details.push(`condition: ${currentPhase.targetingCondition}`);
+    if (details.length) parts.push(`Active phase — ${details.join("; ")}`);
+  }
+
+  parts.push("");
+  parts.push(formatExperimentDetail(data as any, appOrigin));
+  return parts.join("\n");
+}
+
 export function formatSnapshotResult(
   experimentId: string,
   status: "success" | "timeout" | "error",

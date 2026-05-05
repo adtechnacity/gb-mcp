@@ -16,9 +16,7 @@
     "entry_point": "server/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/server/index.js"
-      ],
+      "args": ["${__dirname}/server/index.js"],
       "env": {
         "GB_API_KEY": "${user_config.GB_API_KEY}",
         "GB_EMAIL": "${user_config.GB_EMAIL}",
@@ -87,6 +85,10 @@
     {
       "name": "start_experiment",
       "description": "Launch a draft experiment into running status with traffic allocation."
+    },
+    {
+      "name": "update_experiment_targeting",
+      "description": "Change targeting on a running experiment (conditions, saved groups, prerequisites, namespace, coverage, traffic split). Defaults to appending a new phase to keep analysis clean."
     },
     {
       "name": "stop_experiment",
@@ -248,12 +250,7 @@
       "sensitive": false
     }
   },
-  "keywords": [
-    "experimentation",
-    "feature flags",
-    "ab testing",
-    "growthbook"
-  ],
+  "keywords": ["experimentation", "feature flags", "ab testing", "growthbook"],
   "license": "MIT",
   "repository": {
     "type": "git",
