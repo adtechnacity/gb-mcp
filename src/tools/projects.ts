@@ -38,12 +38,8 @@ export function registerProjectTools({
           "/api/v1/projects",
           limit,
           offset,
-          mostRecent
+          mostRecent,
         )) as ListProjectsResponse;
-
-        if (mostRecent && offset === 0 && Array.isArray(data.projects)) {
-          data.projects = data.projects.reverse();
-        }
 
         return {
           content: [{ type: "text", text: formatProjects(data) }],
@@ -52,9 +48,9 @@ export function registerProjectTools({
         throw new Error(
           formatApiError(error, "fetching projects", [
             "Check that your GB_API_KEY has permission to read projects.",
-          ])
+          ]),
         );
       }
-    }
+    },
   );
 }

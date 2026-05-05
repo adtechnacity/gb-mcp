@@ -295,11 +295,6 @@ export function registerFeatureTools({
           project ? { projectId: project } : undefined,
         );
 
-        // Reverse features array for mostRecent to show newest-first
-        if (mostRecent && offset === 0 && Array.isArray(data.features)) {
-          data.features = data.features.reverse();
-        }
-
         return {
           content: [{ type: "text", text: formatFeatureFlagList(data) }],
         };

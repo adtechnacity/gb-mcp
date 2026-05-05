@@ -52,23 +52,20 @@ export function registerSdkConnectionTools({
           limit,
           offset,
           mostRecent,
-          project ? { projectId: project } : undefined
+          project ? { projectId: project } : undefined,
         )) as ListSdkConnectionsResponse;
-
-        // Reverse connections array for mostRecent to show newest-first
-        if (mostRecent && offset === 0 && Array.isArray(data.connections)) {
-          data.connections = data.connections.reverse();
-        }
 
         return {
           content: [{ type: "text", text: formatSdkConnections(data) }],
         };
       } catch (error) {
-        throw new Error(formatApiError(error, "fetching SDK connections", [
-          "Check that your GB_API_KEY has permission to read SDK connections.",
-        ]));
+        throw new Error(
+          formatApiError(error, "fetching SDK connections", [
+            "Check that your GB_API_KEY has permission to read SDK connections.",
+          ]),
+        );
       }
-    }
+    },
   );
 
   /**

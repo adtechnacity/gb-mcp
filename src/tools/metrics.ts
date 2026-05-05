@@ -132,16 +132,6 @@ export function registerMetricsTools({
           ),
         ])) as [ListMetricsResponse, ListFactMetricsResponse];
 
-        // Reverse arrays for mostRecent to show newest-first
-        if (mostRecent && offset === 0) {
-          if (Array.isArray(metricsData.metrics)) {
-            metricsData.metrics = metricsData.metrics.reverse();
-          }
-          if (Array.isArray(factMetricData.factMetrics)) {
-            factMetricData.factMetrics = factMetricData.factMetrics.reverse();
-          }
-        }
-
         return {
           content: [
             {
