@@ -6,12 +6,12 @@
     "url": "https://github.com/growthbook/growthbook-mcp",
     "source": "github"
   },
-  "version": "1.9.3",
+  "version": "1.10.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@growthbook/mcp",
-      "version": "1.9.3",
+      "version": "1.10.0",
       "transport": {
         "type": "stdio"
       },
