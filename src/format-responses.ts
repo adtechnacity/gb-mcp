@@ -538,7 +538,10 @@ export function formatExperimentCreated(
   const link = generateLinkToGrowthBook(appOrigin, "experiment", e.id);
   const variations = e.variations
     ? e.variations
-        .map((v) => `${v.name} (variationId: \`${v.variationId}\`)`)
+        .map(
+          (v) =>
+            `${v.name} (key: \`${v.key}\`, variationId: \`${v.variationId}\`)`,
+        )
         .join(", ")
     : "none";
 

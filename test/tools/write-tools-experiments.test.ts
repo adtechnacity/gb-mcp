@@ -49,7 +49,264 @@ const baseArgs = {
   user: "u@example.com",
 };
 
+describe("create_experiment", () => {
+  it("forwards custom variation keys to the API", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            name: "Coupon test",
+            status: "draft",
+            type: "standard",
+            trackingKey: "coupon-test",
+            variations: [
+              { variationId: "v0", key: "control", name: "Control" },
+              { variationId: "v1", key: "coupon_a", name: "Coupon A" },
+            ],
+            phases: [],
+            settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    vi.doMock("../../src/tools/defaults.js", () => ({
+      getDefaults: vi.fn(async () => ({
+        environments: ["production"],
+        datasource: "ds_1",
+        assignmentQuery: "aq_1",
+      })),
+    }));
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "create_experiment");
+    expect(tool).toBeTruthy();
+
+    const p = tool!.handler({
+      name: "Coupon test",
+      valueType: "string",
+      variations: [
+        { name: "Control", value: "ctrl", key: "control" },
+        { name: "Coupon A", value: "coupon_a", key: "coupon_a" },
+      ],
+      fileExtension: "ts",
+      confirmedDefaultsReviewed: true,
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("created");
+    expect(res.content[0].text).toContain("`control`");
+    expect(res.content[0].text).toContain("`coupon_a`");
+
+    const postCall = calls.find(
+      (c) => c.method === "POST" && c.url.endsWith("/experiments"),
+    );
+    const body = JSON.parse(postCall!.body!);
+    expect(body.variations).toEqual([
+      { key: "control", name: "Control" },
+      { key: "coupon_a", name: "Coupon A" },
+    ]);
+  });
+
+  it("defaults variation keys to the array index when omitted (back-compat)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            name: "Boolean test",
+            status: "draft",
+            type: "standard",
+            trackingKey: "boolean-test",
+            variations: [
+              { variationId: "v0", key: "0", name: "Control" },
+              { variationId: "v1", key: "1", name: "Treatment" },
+            ],
+            phases: [],
+            settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    vi.doMock("../../src/tools/defaults.js", () => ({
+      getDefaults: vi.fn(async () => ({
+        environments: ["production"],
+        datasource: "ds_1",
+        assignmentQuery: "aq_1",
+      })),
+    }));
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "create_experiment");
+    const p = tool!.handler({
+      name: "Boolean test",
+      valueType: "boolean",
+      variations: [
+        { name: "Control", value: false },
+        { name: "Treatment", value: true },
+      ],
+      fileExtension: "ts",
+      confirmedDefaultsReviewed: true,
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find(
+      (c) => c.method === "POST" && c.url.endsWith("/experiments"),
+    );
+    const body = JSON.parse(postCall!.body!);
+    expect(body.variations).toEqual([
+      { key: "0", name: "Control" },
+      { key: "1", name: "Treatment" },
+    ]);
+  });
+
+  it("rejects an empty variation key at the schema layer", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    vi.doMock("../../src/tools/defaults.js", () => ({
+      getDefaults: vi.fn(async () => ({
+        environments: ["production"],
+        datasource: "ds_1",
+        assignmentQuery: "aq_1",
+      })),
+    }));
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "create_experiment");
+    const result = tool!.config.inputSchema.safeParse({
+      name: "Empty key test",
+      valueType: "string",
+      variations: [
+        { name: "Control", value: "ctrl", key: "" },
+        { name: "Treatment", value: "trmt", key: "treatment" },
+      ],
+      fileExtension: "ts",
+      confirmedDefaultsReviewed: true,
+    });
+    expect(result.success).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("update_experiment", () => {
+  it("rejects an empty variation key at the schema layer", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment");
+    const result = tool!.config.inputSchema.safeParse({
+      experimentId: "exp_1",
+      variations: [{ id: "v0", key: "", name: "Control" }],
+    });
+    expect(result.success).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("forwards a replacement variations array to the API", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            name: "Coupon test",
+            status: "draft",
+            type: "standard",
+            variations: [
+              { variationId: "v0", key: "control", name: "Control" },
+              { variationId: "v1", key: "coupon_a", name: "Coupon A" },
+            ],
+            phases: [],
+            settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    vi.doMock("../../src/tools/defaults.js", () => ({
+      getDefaults: vi.fn(async () => ({
+        environments: ["production"],
+        datasource: "ds_1",
+        assignmentQuery: "aq_1",
+      })),
+    }));
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      variations: [
+        { id: "v0", key: "control", name: "Control" },
+        { id: "v1", key: "coupon_a", name: "Coupon A" },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.variations).toEqual([
+      { id: "v0", key: "control", name: "Control" },
+      { id: "v1", key: "coupon_a", name: "Coupon A" },
+    ]);
+    expect(body.status).toBeUndefined();
+  });
+
   it("sends only provided fields", async () => {
     vi.useFakeTimers();
     const calls: Array<{ url: string; method?: string; body?: string }> = [];
@@ -236,8 +493,10 @@ describe("start_experiment", () => {
     const body = JSON.parse(postCall!.body!);
     expect(body.status).toBe("running");
     expect(body.phases).toHaveLength(1);
-    expect(body.phases[0].trafficSplit).toHaveLength(2);
-    expect(body.phases[0].trafficSplit[0].weight).toBe(0.5);
+    expect(body.phases[0].variationWeights).toEqual([0.5, 0.5]);
+    expect(body.phases[0].trafficSplit).toBeUndefined();
+    expect(body.phases[0].condition).toBe("{}");
+    expect(body.phases[0].targetingCondition).toBe("{}");
   });
 
   it("rejects non-draft experiments", async () => {
@@ -383,6 +642,7 @@ describe("start_experiment", () => {
     const postCall = calls.find((c) => c.method === "POST");
     const body = JSON.parse(postCall!.body!);
     expect(body.phases[0].targetingCondition).toBe('{"country":"US"}');
+    expect(body.phases[0].condition).toBe('{"country":"US"}');
   });
 
   it("defaults targetingCondition to '{}' when not provided", async () => {
