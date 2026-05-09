@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.1] - 2026-05-09
+
+### Added
+
+- `create_experiment` now accepts a `key` field per variation. The key is the value GrowthBook's analysis pipeline matches against your assignment-query `variation_id` column — set this to whatever your application writes to analytics. Defaults to the array index ('0', '1', ...) when omitted, preserving existing behavior.
+- `update_experiment` now accepts a `variations` array (full replacement). Use this to fix per-variation `key` or `name` after creation without opening the GrowthBook UI. Variation `value`s for a linked feature flag still live on the feature's experiment-ref rule and are not changed by this tool.
+
+### Fixed
+
+- `start_experiment` now sends `variationWeights` (the field GrowthBook's mapper reads) instead of the deprecated `trafficSplit`, and sends both `condition` and `targetingCondition` for the new phase. Previously, the launched phase's targeting was silently dropped on the server side and weights could be reset to equal split. Brings `start_experiment` to parity with `update_experiment_targeting`, `resume_experiment`, and `stop_experiment`.
+
+### Why this matters
+
+Experiments created via MCP with non-numeric analytics `variation_id`s (e.g. `coupon_a`, `treatment`) used to show "User Ids: 0" on the Results page indefinitely, because the auto-generated keys ("0", "1") never matched the warehouse rows. The only workaround was opening the GrowthBook UI after every MCP-created experiment and editing each variation's "Variation Key" by hand. With these changes, the agent can set keys at creation time and fix them in place after the fact.
+
 ## [1.10.0] - 2026-05-05
 
 ### Added

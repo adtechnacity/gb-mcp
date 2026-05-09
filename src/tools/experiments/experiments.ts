@@ -364,7 +364,7 @@ export function registerExperimentTools({
     {
       title: "Create Experiment",
       description:
-        "Creates a new A/B test experiment in GrowthBook. An experiment randomly assigns users to different variations and measures which performs better against your metrics. Prerequisites: 1) Call get_defaults first to review naming conventions and configuration, 2) If testing via a feature flag, provide its featureId OR create the flag first using create_feature_flag. Returns a draft experiment that the user must review and launch in the GrowthBook UI, including a link and SDK integration code. Do NOT use for simple feature toggles (use create_feature_flag) or targeting without measurement (use create_force_rule).",
+        "Creates a new A/B test experiment in GrowthBook. An experiment randomly assigns users to different variations and measures which performs better against your metrics. Prerequisites: 1) Call get_defaults first to review naming conventions and configuration, 2) If testing via a feature flag, provide its featureId OR create the flag first using create_feature_flag. Returns a draft experiment that the user must review and launch in the GrowthBook UI, including a link and SDK integration code. Set each variation's `key` to the exact string your application writes to your analytics warehouse `variation_id` column — otherwise the Results page will show 'User Ids: 0' until you manually edit the keys in the UI. Defaults to the array index ('0', '1', ...) if omitted. Do NOT use for simple feature toggles (use create_feature_flag) or targeting without measurement (use create_force_rule).",
       inputSchema: z.object({
         name: z
           .string()
@@ -401,10 +401,16 @@ export function registerExperimentTools({
                 .describe(
                   "The value of this variation. Must match the specified valueType: provide actual booleans (true/false) not strings, actual numbers, strings, or valid JSON objects.",
                 ),
+              key: z
+                .string()
+                .optional()
+                .describe(
+                  "Variation key written to your analytics warehouse `variation_id` column. Defaults to the array index ('0', '1', ...) if omitted. Set this to the exact string your application code passes to the SDK / writes to the assignment-query data source — otherwise the GrowthBook Results page will show 'User Ids: 0' because the analysis pipeline matches `assignment_query.variation_id` against this key. Examples: 'control', 'treatment', 'coupon_a'.",
+                ),
             }),
           )
           .describe(
-            'Array of experiment variations. Each has a name (displayed in GrowthBook UI) and value (what users receive). The first variation should be the control/default. Example: [{name: "Control", value: false}, {name: "Treatment", value: true}]',
+            'Array of experiment variations. Each has a name (displayed in GrowthBook UI), value (what users receive via the SDK), and an optional key (must match the variation_id your app writes to analytics — defaults to the index). The first variation should be the control/default. Example: [{name: "Control", value: false, key: "control"}, {name: "Treatment", value: true, key: "treatment"}]',
           ),
         project: z
           .string()
@@ -473,12 +479,10 @@ export function registerExperimentTools({
         tags: ["mcp"],
         assignmentQueryId: experimentDefaults?.assignmentQuery,
         datasourceId: experimentDefaults?.datasource,
-        variations: (variations as Array<{ name: string }>).map(
-          (variation: { name: string }, idx: number) => ({
-            key: idx.toString(),
-            name: variation.name,
-          }),
-        ),
+        variations: variations.map((variation, idx) => ({
+          key: variation.key ?? idx.toString(),
+          name: variation.name,
+        })),
         ...(project && { project }),
         ...(customFields && { customFields }),
       };
@@ -576,7 +580,7 @@ export function registerExperimentTools({
     {
       title: "Update Experiment",
       description:
-        "Updates properties of an existing experiment. Only the provided fields are changed. For lifecycle changes, use start_experiment, stop_experiment, or archive_experiment instead. For targeting (conditions, traffic split, coverage, namespace, prerequisites) on running experiments, use update_experiment_targeting.",
+        "Updates properties of an existing experiment. Only the provided fields are changed. Pass `variations` to fix per-variation keys/names after creation — common when the analytics `variation_id` doesn't match the auto-generated index keys ('0', '1', ...). For lifecycle changes, use start_experiment, stop_experiment, or archive_experiment instead. For targeting (conditions, traffic split, coverage, namespace, prerequisites) on running experiments, use update_experiment_targeting.",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         name: z.string().optional().describe("Updated name"),
@@ -591,6 +595,31 @@ export function registerExperimentTools({
           ),
         owner: z.string().optional().describe("Owner email"),
         project: z.string().optional().describe("Move to project"),
+        variations: z
+          .array(
+            z.object({
+              id: z
+                .string()
+                .optional()
+                .describe(
+                  "Existing variationId to update in place. Find via get_experiments. Omit to add a new variation.",
+                ),
+              key: z
+                .string()
+                .describe(
+                  "Variation key written to analytics — must match the value your app passes to the SDK / writes to your assignment-query `variation_id` column. Mismatch causes the Results page to show 'User Ids: 0'.",
+                ),
+              name: z.string().describe("Display name for the variation."),
+              description: z
+                .string()
+                .optional()
+                .describe("Optional variation description."),
+            }),
+          )
+          .optional()
+          .describe(
+            "Replace the experiment's variations array. Provide every variation in the new order. Note: this updates the experiment record only — variation `value`s for a linked feature flag live on the feature's experiment-ref rule and are not changed here. Use this primarily to fix per-variation `key` mismatches after creation.",
+          ),
         metrics: z
           .array(z.string())
           .optional()
@@ -809,13 +838,13 @@ export function registerExperimentTools({
           };
         }
 
-        const newPhase = {
+        const newPhase = getPhaseToPostPhase({
           name: "Phase 1",
           dateStarted: new Date().toISOString(),
           coverage: coverage ?? 1.0,
           trafficSplit: split,
           targetingCondition: targetingCondition ?? "{}",
-        };
+        });
 
         const res = await fetchWithRateLimit(
           `${baseApiUrl}/api/v1/experiments/${experimentId}`,

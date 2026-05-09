@@ -19,6 +19,7 @@ export type Experiment = {
   };
   variations: Array<{
     variationId: string;
+    key: string;
     name: string;
   }>;
   settings: {
