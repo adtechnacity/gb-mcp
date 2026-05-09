@@ -403,9 +403,10 @@ export function registerExperimentTools({
                 ),
               key: z
                 .string()
+                .min(1)
                 .optional()
                 .describe(
-                  "Variation key written to your analytics warehouse `variation_id` column. Defaults to the array index ('0', '1', ...) if omitted. Set this to the exact string your application code passes to the SDK / writes to the assignment-query data source — otherwise the GrowthBook Results page will show 'User Ids: 0' because the analysis pipeline matches `assignment_query.variation_id` against this key. Examples: 'control', 'treatment', 'coupon_a'.",
+                  "Variation key written to your analytics warehouse `variation_id` column. Defaults to the array index ('0', '1', ...) if omitted or empty. Set this to the exact string your application code passes to the SDK / writes to the assignment-query data source — otherwise the GrowthBook Results page will show 'User Ids: 0' because the analysis pipeline matches `assignment_query.variation_id` against this key. Examples: 'control', 'treatment', 'coupon_a'.",
                 ),
             }),
           )
@@ -480,7 +481,7 @@ export function registerExperimentTools({
         assignmentQueryId: experimentDefaults?.assignmentQuery,
         datasourceId: experimentDefaults?.datasource,
         variations: variations.map((variation, idx) => ({
-          key: variation.key ?? idx.toString(),
+          key: variation.key || idx.toString(),
           name: variation.name,
         })),
         ...(project && { project }),
@@ -606,6 +607,7 @@ export function registerExperimentTools({
                 ),
               key: z
                 .string()
+                .min(1)
                 .describe(
                   "Variation key written to analytics — must match the value your app passes to the SDK / writes to your assignment-query `variation_id` column. Mismatch causes the Results page to show 'User Ids: 0'.",
                 ),

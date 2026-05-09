@@ -187,9 +187,65 @@ describe("create_experiment", () => {
       { key: "1", name: "Treatment" },
     ]);
   });
+
+  it("rejects an empty variation key at the schema layer", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    vi.doMock("../../src/tools/defaults.js", () => ({
+      getDefaults: vi.fn(async () => ({
+        environments: ["production"],
+        datasource: "ds_1",
+        assignmentQuery: "aq_1",
+      })),
+    }));
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "create_experiment");
+    const result = tool!.config.inputSchema.safeParse({
+      name: "Empty key test",
+      valueType: "string",
+      variations: [
+        { name: "Control", value: "ctrl", key: "" },
+        { name: "Treatment", value: "trmt", key: "treatment" },
+      ],
+      fileExtension: "ts",
+      confirmedDefaultsReviewed: true,
+    });
+    expect(result.success).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("update_experiment", () => {
+  it("rejects an empty variation key at the schema layer", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment");
+    const result = tool!.config.inputSchema.safeParse({
+      experimentId: "exp_1",
+      variations: [{ id: "v0", key: "", name: "Control" }],
+    });
+    expect(result.success).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("forwards a replacement variations array to the API", async () => {
     vi.useFakeTimers();
     const calls: Array<{ url: string; method?: string; body?: string }> = [];
