@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - User-supplied `trafficSplit` arrays are now mapped to `variationWeights` by `variationId` (matching `experiment.variations` order) instead of positionally. Previously, passing trafficSplit entries in a different order than the experiment's variations would silently apply weights to the wrong variations on the GrowthBook side (the API reads `variationWeights[i]` positionally, zipping with the canonical variations order). Affects `start_experiment`, `update_experiment_targeting`, and `resume_experiment`.
+- `update_experiment_targeting` draft patchCurrent now realigns seeded weights by `variationId` (same behavior as `start_experiment`'s draft launch path). Previously, a coverage/condition-only patch on a draft seeded via the GrowthBook UI would convert the source phase's `trafficSplit` to positional `variationWeights` and POST those onto the wrong variations if the variations list had been reordered between seeding and patching. Same-length positional reorders without IDs remain undetectable (documented limitation).
 
 ## [1.10.1] - 2026-05-09
 

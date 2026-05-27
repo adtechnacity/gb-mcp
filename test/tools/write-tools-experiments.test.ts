@@ -2446,6 +2446,69 @@ describe("update_experiment_targeting", () => {
     expect(phase.coverage).toBe(0.8);
   });
 
+  it("draft patchCurrent realigns seeded weights by variationId when variations have been reordered since seeding", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const draftReorderedJson = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "draft",
+        type: "standard",
+        // Variations have been reordered since seeding: was [v0, v1] when the
+        // phase was seeded (with v0=0.3, v1=0.7); now [v1, v0].
+        variations: [
+          { variationId: "v1", key: "1", name: "B" },
+          { variationId: "v0", key: "0", name: "Control" },
+        ],
+        phases: [
+          {
+            name: "Phase 1",
+            dateStarted: "2026-03-01T00:00:00Z",
+            coverage: 0.8,
+            // Source phase carries trafficSplit IDs (seeded via UI).
+            trafficSplit: [
+              { variationId: "v0", weight: 0.3 },
+              { variationId: "v1", weight: 0.7 },
+            ],
+            // Positional variationWeights are stale relative to the new order.
+            variationWeights: [0.3, 0.7],
+            condition: '{"utm_source":"facebook"}',
+            targetingCondition: '{"utm_source":"facebook"}',
+          },
+        ],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, draftReorderedJson);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    // Coverage/condition-only patch — no trafficSplit override.
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"utm_source":"google"}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(1);
+    const phase = body.phases[0];
+    // Weights must be reordered by variationId to match [v1, v0]: 0.7, 0.3.
+    // Without ID-based realignment, this would post [0.3, 0.7] — applying v0's
+    // weight to v1 and vice versa.
+    expect(phase.variationWeights).toEqual([0.7, 0.3]);
+    expect(phase.targetingCondition).toBe('{"utm_source":"google"}');
+  });
+
   it("rejects draft patchCurrent when variations were cleared (would post weights for non-existent variations)", async () => {
     vi.useFakeTimers();
     const calls: Array<{ url: string; method?: string; body?: string }> = [];

@@ -54,6 +54,48 @@ function trafficSplitToOrderedWeights(
   return variations.map((v) => weightById.get(v.variationId) ?? 0);
 }
 
+// Realigns a source phase's weights to the current experiment.variations order.
+// Used when carrying a seeded phase forward (draft launch or draft patch). If
+// the source phase has trafficSplit with variationIds (e.g. seeded via the
+// GrowthBook UI), map weight→variation by ID so reorders/replacements don't
+// silently apply weights to the wrong variations. Falls back to positional
+// preservation when lengths match; equal-splits otherwise. Same-length
+// positional reorders without IDs remain undetectable.
+function realignSeededWeightsToVariations(
+  sourcePhase: any,
+  variations: { variationId: string }[],
+): number[] {
+  const variationCount = variations.length;
+  const seededSplit = Array.isArray(sourcePhase?.trafficSplit)
+    ? sourcePhase.trafficSplit
+    : null;
+  if (
+    seededSplit &&
+    seededSplit.every((s: any) => typeof s?.variationId === "string")
+  ) {
+    const weightById = new Map<string, number>(
+      seededSplit.map((s: any) => [s.variationId, s.weight]),
+    );
+    const allMapped = variations.every((v: any) =>
+      weightById.has(v.variationId),
+    );
+    return allMapped
+      ? variations.map((v: any) => weightById.get(v.variationId)!)
+      : variations.map(() => 1 / variationCount);
+  }
+  const seededWeights = Array.isArray(sourcePhase?.variationWeights)
+    ? sourcePhase.variationWeights
+    : null;
+  if (
+    !seededWeights ||
+    seededWeights.length === 0 ||
+    seededWeights.length !== variationCount
+  ) {
+    return variations.map(() => 1 / variationCount);
+  }
+  return seededWeights;
+}
+
 function getPhaseToPostPhase(p: any): Record<string, any> {
   const condition = p.condition ?? p.targetingCondition ?? "{}";
   const variationWeights = Array.isArray(p.variationWeights)
@@ -887,44 +929,10 @@ export function registerExperimentTools({
           delete basePost.dateEnded;
           delete basePost.reason;
 
-          // Realign seeded weights to current variations. If the source phase
-          // has trafficSplit entries with variationIds (e.g., seeded via the
-          // GrowthBook UI), use those IDs to map weight→variation correctly
-          // even across reorders or replacements. Otherwise fall back to
-          // positional: same-length matches keep the order, any mismatch
-          // equal-splits. Same-length positional reorders without IDs remain
-          // undetectable (documented limitation when the source has no IDs).
-          const variationCount = experiment.variations.length;
-          const seededSplit = Array.isArray(lastExisting?.trafficSplit)
-            ? lastExisting.trafficSplit
-            : null;
-          if (
-            seededSplit &&
-            seededSplit.every((s: any) => typeof s?.variationId === "string")
-          ) {
-            const weightById = new Map<string, number>(
-              seededSplit.map((s: any) => [s.variationId, s.weight]),
-            );
-            const allMapped = experiment.variations.every((v: any) =>
-              weightById.has(v.variationId),
-            );
-            basePost.variationWeights = allMapped
-              ? experiment.variations.map(
-                  (v: any) => weightById.get(v.variationId)!,
-                )
-              : experiment.variations.map(() => 1 / variationCount);
-          } else {
-            const seededWeights = basePost.variationWeights;
-            if (
-              !Array.isArray(seededWeights) ||
-              seededWeights.length === 0 ||
-              seededWeights.length !== variationCount
-            ) {
-              basePost.variationWeights = experiment.variations.map(
-                () => 1 / variationCount,
-              );
-            }
-          }
+          basePost.variationWeights = realignSeededWeightsToVariations(
+            lastExisting,
+            experiment.variations,
+          );
 
           const merged: Record<string, any> = { ...basePost };
           merged.name = lastExisting.name || "Phase 1";
@@ -1250,25 +1258,20 @@ export function registerExperimentTools({
           const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
           const lastPhasePost =
             existingPostPhases[existingPostPhases.length - 1];
+          const lastExisting = existingPhases[existingPhases.length - 1];
           const patchedPhase = { ...lastPhasePost, ...overrides };
           if (clearNamespace) delete patchedPhase.namespace;
-          // If variations changed via update_experiment between targeting
-          // edits, the preserved variationWeights length no longer matches.
-          // Drop stale weights and equal-split. Same-length reorderings are
-          // not detectable (no seed-time variation IDs on phases) — documented
-          // limitation, mirrors start_experiment fallback.
+          // Realign weights from the raw source phase (which retains
+          // trafficSplit IDs from the GET response) — getPhaseToPostPhase
+          // flattens trafficSplit into positional variationWeights, losing the
+          // ID info needed to detect reorders. The user's explicit trafficSplit
+          // override (already in `overrides`) is applied via the spread above
+          // and takes precedence; only realign when the caller didn't pass one.
           if (trafficSplit === undefined) {
-            const variationCount = experiment.variations?.length ?? 0;
-            const currentWeights = patchedPhase.variationWeights;
-            if (
-              variationCount > 0 &&
-              (!Array.isArray(currentWeights) ||
-                currentWeights.length !== variationCount)
-            ) {
-              patchedPhase.variationWeights = experiment.variations.map(
-                () => 1 / variationCount,
-              );
-            }
+            patchedPhase.variationWeights = realignSeededWeightsToVariations(
+              lastExisting,
+              experiment.variations,
+            );
           }
           phases = [...existingPostPhases.slice(0, -1), patchedPhase];
           action = "patchCurrent";
