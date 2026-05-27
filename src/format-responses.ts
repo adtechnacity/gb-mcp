@@ -681,7 +681,7 @@ export function formatExperimentTargetingUpdated(
   const phases = e.phases || [];
   const phaseCount = phases.length;
   const currentPhase = phases[phases.length - 1];
-  const isDraft = (e as any).status === "draft";
+  const isDraft = e.status === "draft";
 
   const headline =
     action === "seeded" || (action === "patchCurrent" && isDraft)

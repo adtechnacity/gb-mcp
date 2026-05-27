@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - Draft patchCurrent confirmation message is now draft-aware: the response headline says "targeting configured (draft)" and explicitly reminds the agent that a human still needs to launch the experiment via the UI (or call `start_experiment`). Previously the message matched the running-experiment confirmation, so an agent could stop after "successfully" patching even though no users were enrolling.
 - Draft seed/patch confirmation messages now flag the `includeDraftExperiments` SDK setting (uncommon, used for QA/preview) — when enabled, draft experiments enroll users immediately regardless of status, so agents seeding production-bound targeting should verify SDK config with the team before relying on the "still a draft" guarantee.
 
+### Fixed
+
+- User-supplied `trafficSplit` arrays are now mapped to `variationWeights` by `variationId` (matching `experiment.variations` order) instead of positionally. Previously, passing trafficSplit entries in a different order than the experiment's variations would silently apply weights to the wrong variations on the GrowthBook side (the API reads `variationWeights[i]` positionally, zipping with the canonical variations order). Affects `start_experiment`, `update_experiment_targeting`, and `resume_experiment`.
+
 ## [1.10.1] - 2026-05-09
 
 ### Added

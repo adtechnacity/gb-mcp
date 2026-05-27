@@ -1144,6 +1144,71 @@ describe("start_experiment", () => {
     const body = JSON.parse(postCall!.body!);
     expect(body.phases[0].variationWeights).toEqual([0.5, 0.5]);
   });
+
+  it("remaps user-supplied trafficSplit weights to experiment.variations order", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v1", key: "1", name: "Treatment" },
+              ],
+              phases: [],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    // Pass trafficSplit in reverse order — v1 first with 0.7, v0 second with 0.3.
+    // variationWeights on the POST must be ordered to match experiment.variations
+    // ([v0, v1]) so v0=0.3 and v1=0.7, not the positional [0.7, 0.3].
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      trafficSplit: [
+        { variationId: "v1", weight: 0.7 },
+        { variationId: "v0", weight: 0.3 },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases[0].variationWeights).toEqual([0.3, 0.7]);
+  });
 });
 
 describe("stop_experiment", () => {
@@ -2214,42 +2279,6 @@ describe("update_experiment_targeting", () => {
     expect(phase.variationWeights).toEqual([0.3, 0.7]);
     expect(phase.condition).toBe("{}");
     expect(phase.targetingCondition).toBe("{}");
-  });
-
-  it("rejects when status is archived", async () => {
-    vi.useFakeTimers();
-    const fetchSpy = vi.fn(async () =>
-      makeResponse({
-        ok: true,
-        status: 200,
-        json: {
-          experiment: {
-            id: "exp_1",
-            status: "archived",
-            variations: [],
-            phases: [],
-          },
-        },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchSpy);
-
-    const { server, tools } = makeServerCapture();
-    baseArgs.server = server;
-    const { registerExperimentTools } =
-      await import("../../src/tools/experiments/experiments.js");
-    registerExperimentTools(baseArgs);
-
-    const tool = tools.find((t) => t.name === "update_experiment_targeting");
-    const p = tool!.handler({
-      experimentId: "exp_1",
-      coverage: 0.5,
-    });
-    await vi.runAllTimersAsync();
-    const res = await p;
-
-    expect(res.content[0].text).toContain("archived");
-    expect(res.content[0].text).toContain("archive_experiment");
   });
 
   it("rejects archived experiments even when status is 'draft' (archived flag is independent of status)", async () => {

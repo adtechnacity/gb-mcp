@@ -38,6 +38,22 @@ import { handleSummaryMode, getMetricLookup } from "./experiment-summary.js";
 
 interface ExperimentTools extends ExtendedToolsInterface {}
 
+// Maps user-supplied trafficSplit (variationId + weight pairs) into a
+// variationWeights array ordered by experiment.variations. The GrowthBook API
+// reads variationWeights positionally (zipping with the canonical variations
+// order), so passing trafficSplit in a different order would silently apply
+// weights to the wrong variations. Callers must validate trafficSplit covers
+// every variation exactly once before calling this.
+function trafficSplitToOrderedWeights(
+  trafficSplit: { variationId: string; weight: number }[],
+  variations: { variationId: string }[],
+): number[] {
+  const weightById = new Map(
+    trafficSplit.map((s) => [s.variationId, s.weight]),
+  );
+  return variations.map((v) => weightById.get(v.variationId) ?? 0);
+}
+
 function getPhaseToPostPhase(p: any): Record<string, any> {
   const condition = p.condition ?? p.targetingCondition ?? "{}";
   const variationWeights = Array.isArray(p.variationWeights)
@@ -847,17 +863,18 @@ export function registerExperimentTools({
 
         if (existingPhases.length === 0) {
           // Fresh draft — build Phase 1 from args + defaults (existing behavior).
-          const split =
-            trafficSplit ||
-            experiment.variations.map((v: any) => ({
-              variationId: v.variationId,
-              weight: 1 / experiment.variations.length,
-            }));
+          // Remap user-supplied weights by variationId so a caller passing
+          // trafficSplit in a different order than experiment.variations doesn't
+          // silently swap weights (GrowthBook stores variationWeights positionally).
+          const variationCount = experiment.variations.length;
+          const variationWeights = trafficSplit
+            ? trafficSplitToOrderedWeights(trafficSplit, experiment.variations)
+            : experiment.variations.map(() => 1 / variationCount);
           newPhase = getPhaseToPostPhase({
             name: "Phase 1",
             dateStarted: now,
             coverage: coverage ?? 1.0,
-            trafficSplit: split,
+            variationWeights,
             targetingCondition: targetingCondition ?? "{}",
           });
         } else {
@@ -919,7 +936,10 @@ export function registerExperimentTools({
             merged.targetingCondition = targetingCondition;
           }
           if (trafficSplit !== undefined) {
-            merged.variationWeights = trafficSplit.map((s) => s.weight);
+            merged.variationWeights = trafficSplitToOrderedWeights(
+              trafficSplit,
+              experiment.variations,
+            );
           }
           newPhase = merged;
         }
@@ -1093,12 +1113,13 @@ export function registerExperimentTools({
         }
 
         if (experiment.status !== "running" && experiment.status !== "draft") {
+          // ExperimentStatus is "draft" | "running" | "stopped" — archived is
+          // a separate boolean caught above. Only "stopped" reaches this branch
+          // among the post-guard statuses.
           const suggestion =
             experiment.status === "stopped"
               ? "Use resume_experiment to relaunch a stopped experiment with new targeting."
-              : experiment.status === "archived"
-                ? "Unarchive the experiment with archive_experiment (archived=false) before updating targeting."
-                : "Only 'draft' and 'running' experiments support targeting changes via this tool.";
+              : "Only 'draft' and 'running' experiments support targeting changes via this tool.";
           return {
             content: [
               {
@@ -1171,7 +1192,10 @@ export function registerExperimentTools({
         }
         if (coverage !== undefined) overrides.coverage = coverage;
         if (trafficSplit !== undefined)
-          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+          overrides.variationWeights = trafficSplitToOrderedWeights(
+            trafficSplit,
+            experiment.variations || [],
+          );
 
         const now = new Date().toISOString();
         let phases: any[];
@@ -1201,7 +1225,7 @@ export function registerExperimentTools({
             coverage: coverage ?? 1,
             targetingCondition: targetingCondition ?? "{}",
             variationWeights: trafficSplit
-              ? trafficSplit.map((s) => s.weight)
+              ? trafficSplitToOrderedWeights(trafficSplit, variations)
               : defaultWeights,
             ...(savedGroupTargeting !== undefined
               ? { savedGroupTargeting }
@@ -1561,7 +1585,10 @@ export function registerExperimentTools({
         const overrides: Record<string, any> = {};
         if (coverage !== undefined) overrides.coverage = coverage;
         if (trafficSplit !== undefined)
-          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+          overrides.variationWeights = trafficSplitToOrderedWeights(
+            trafficSplit,
+            experiment.variations || [],
+          );
         if (targetingCondition !== undefined) {
           overrides.condition = targetingCondition;
           overrides.targetingCondition = targetingCondition;
