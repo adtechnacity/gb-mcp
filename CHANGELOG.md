@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- `update_experiment_targeting` now supports draft experiments — agents can configure targeting (condition, saved groups, prerequisites, namespace, coverage, traffic split) before a human launches the experiment via the GrowthBook UI. Previously only running experiments were accepted, blocking agent-driven setup of SEM-targeted drafts. On drafts the tool always seeds/patches a single phase (the `mode` argument is ignored — drafts cannot have multiple phases); stopped/archived experiments still rejected with pointers to `resume_experiment` / `archive_experiment`.
+- `start_experiment` now preserves any pre-seeded phase configuration from drafts (condition, coverage, variation weights, saved groups, prerequisites, namespace, phase name), so the `update_experiment_targeting` → `start_experiment` workflow actually persists what the agent set up instead of silently overwriting it with defaults. Explicit `coverage`, `trafficSplit`, or `targetingCondition` args at launch still override the seeded values for those fields only. Fresh drafts with no seeded phase continue to launch with the previous defaults (coverage 1.0, equal split, condition `"{}"`).
+- `start_experiment` now realigns seeded weights by `variationId` when the source phase carries `trafficSplit` entries with IDs (e.g. drafts seeded via the GrowthBook UI), so variation reorders/replacements between seed and launch no longer silently apply weights to the wrong variations. Falls back to equal split when any current variation isn't covered by the seeded IDs. For phases without IDs (only positional `variationWeights`), same-length reorders remain undetectable — length mismatch still triggers equal-split fallback, and length match still applies seeded weights positionally.
+- Experiment detail rendering is now status-aware: drafts render phases as "not yet launched" instead of `<dateStarted> → ongoing`, so a seeded draft no longer reads as an active experiment. The seeded phase still carries `dateStarted` in the POST body (the GrowthBook API requires it), but the renderer keys off `experiment.status` rather than the presence of `dateStarted`.
+- `update_experiment_targeting` now rejects archived experiments explicitly (the `archived` flag is independent of `status` — an archived draft would previously slip past the status guard). The archived check runs before any status-specific branching, so an archived-stopped experiment now gets pointed at `archive_experiment` (archived=false) instead of the stale `resume_experiment` suggestion.
+- `update_experiment_targeting` now drops stale seeded `variationWeights` on draft patchCurrent when the variation count changed between targeting edits (e.g. variations added/removed via `update_experiment`) and falls back to equal split, mirroring the `start_experiment` fallback. Same-length reorderings still apply seeded weights positionally — variation IDs aren't stored on phases at seed time, so reorders can't be detected. Running-experiment paths are unchanged.
+- `update_experiment_targeting` now rejects draft patchCurrent when the variations list was cleared between targeting edits, instead of posting stale weights for variations that no longer exist. Points the agent at `update_experiment` to set variations first.
+- Draft patchCurrent confirmation message is now draft-aware: the response headline says "targeting configured (draft)" and explicitly reminds the agent that a human still needs to launch the experiment via the UI (or call `start_experiment`). Previously the message matched the running-experiment confirmation, so an agent could stop after "successfully" patching even though no users were enrolling.
+- Draft seed/patch confirmation messages now flag the `includeDraftExperiments` SDK setting (uncommon, used for QA/preview) — when enabled, draft experiments enroll users immediately regardless of status, so agents seeding production-bound targeting should verify SDK config with the team before relying on the "still a draft" guarantee.
+
 ## [1.10.1] - 2026-05-09
 
 ### Added

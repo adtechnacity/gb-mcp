@@ -722,6 +722,428 @@ describe("start_experiment", () => {
     expect(JSON.stringify(result.error)).toContain("valid JSON");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("preserves a pre-seeded phase from a draft when no overrides are passed", async () => {
+    vi.useFakeTimers();
+    const seededDateStarted = "2026-03-01T00:00:00Z";
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v1", key: "1", name: "Treatment" },
+              ],
+              phases: [
+                {
+                  name: "SEM Non-Brand",
+                  dateStarted: seededDateStarted,
+                  coverage: 0.5,
+                  variationWeights: [0.7, 0.3],
+                  condition: '{"utmCampaign":"abc"}',
+                  savedGroupTargeting: [
+                    { matchType: "all", savedGroups: ["sg_premium"] },
+                  ],
+                  prerequisites: [
+                    { id: "prereq_1", condition: '{"value":true}' },
+                  ],
+                  namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            name: "Test",
+            status: "running",
+            type: "standard",
+            variations: [
+              { variationId: "v0", key: "0", name: "Control" },
+              { variationId: "v1", key: "1", name: "Treatment" },
+            ],
+            phases: [{ name: "SEM Non-Brand", dateStarted: seededDateStarted }],
+            settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("started");
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.status).toBe("running");
+    expect(body.phases).toHaveLength(1);
+    const phase = body.phases[0];
+
+    expect(phase.name).toBe("SEM Non-Brand");
+    expect(phase.coverage).toBe(0.5);
+    expect(phase.variationWeights).toEqual([0.7, 0.3]);
+    expect(phase.trafficSplit).toBeUndefined();
+    expect(phase.condition).toBe('{"utmCampaign":"abc"}');
+    expect(phase.targetingCondition).toBe('{"utmCampaign":"abc"}');
+    expect(phase.savedGroupTargeting).toEqual([
+      { matchType: "all", savedGroups: ["sg_premium"] },
+    ]);
+    expect(phase.prerequisites).toEqual([
+      { id: "prereq_1", condition: '{"value":true}' },
+    ]);
+    expect(phase.namespace).toEqual({ namespaceId: "ns_a", range: [0, 0.5] });
+
+    // dateStarted should be refreshed to launch time, not the seeded value.
+    expect(typeof phase.dateStarted).toBe("string");
+    expect(phase.dateStarted).not.toBe(seededDateStarted);
+    expect(phase.dateEnded).toBeUndefined();
+    expect(phase.reason).toBeUndefined();
+  });
+
+  it("lets explicit launch-time args override seeded phase fields while preserving the rest", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v1", key: "1", name: "Treatment" },
+              ],
+              phases: [
+                {
+                  name: "SEM Non-Brand",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  coverage: 0.5,
+                  variationWeights: [0.7, 0.3],
+                  condition: '{"utmCampaign":"abc"}',
+                  savedGroupTargeting: [
+                    { matchType: "all", savedGroups: ["sg_premium"] },
+                  ],
+                  prerequisites: [
+                    { id: "prereq_1", condition: '{"value":true}' },
+                  ],
+                  namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 1.0,
+      targetingCondition: '{"country":"US"}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const phase = body.phases[0];
+
+    // Overrides applied.
+    expect(phase.coverage).toBe(1.0);
+    expect(phase.condition).toBe('{"country":"US"}');
+    expect(phase.targetingCondition).toBe('{"country":"US"}');
+
+    // Non-overridden seeded fields preserved.
+    expect(phase.name).toBe("SEM Non-Brand");
+    expect(phase.variationWeights).toEqual([0.7, 0.3]);
+    expect(phase.savedGroupTargeting).toEqual([
+      { matchType: "all", savedGroups: ["sg_premium"] },
+    ]);
+    expect(phase.prerequisites).toEqual([
+      { id: "prereq_1", condition: '{"value":true}' },
+    ]);
+    expect(phase.namespace).toEqual({ namespaceId: "ns_a", range: [0, 0.5] });
+  });
+
+  it("drops stale seeded variationWeights when variation count changed since seed and falls back to equal split", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              // 3 variations now, but the seeded phase still has 2 weights.
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v1", key: "1", name: "Treatment" },
+                { variationId: "v2", key: "2", name: "Treatment B" },
+              ],
+              phases: [
+                {
+                  name: "SEM Non-Brand",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  coverage: 0.5,
+                  variationWeights: [0.7, 0.3],
+                  condition: '{"utmCampaign":"abc"}',
+                  savedGroupTargeting: [
+                    { matchType: "all", savedGroups: ["sg_premium"] },
+                  ],
+                  prerequisites: [
+                    { id: "prereq_1", condition: '{"value":true}' },
+                  ],
+                  namespace: { namespaceId: "ns_a", range: [0, 0.5] },
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    const phase = body.phases[0];
+
+    // Stale 2-element weights dropped; equal-split across the 3 current variations.
+    expect(phase.variationWeights).toHaveLength(3);
+    for (const w of phase.variationWeights) {
+      expect(w).toBeCloseTo(1 / 3, 10);
+    }
+
+    // Other preserved fields still survive the weight reset.
+    expect(phase.name).toBe("SEM Non-Brand");
+    expect(phase.coverage).toBe(0.5);
+    expect(phase.condition).toBe('{"utmCampaign":"abc"}');
+    expect(phase.targetingCondition).toBe('{"utmCampaign":"abc"}');
+    expect(phase.savedGroupTargeting).toEqual([
+      { matchType: "all", savedGroups: ["sg_premium"] },
+    ]);
+    expect(phase.prerequisites).toEqual([
+      { id: "prereq_1", condition: '{"value":true}' },
+    ]);
+    expect(phase.namespace).toEqual({ namespaceId: "ns_a", range: [0, 0.5] });
+  });
+
+  it("realigns weights by variationId when source phase has trafficSplit IDs (variations reordered between seed and launch)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              name: "Test",
+              status: "draft",
+              type: "standard",
+              // Variations reordered after the phase was seeded (v1 first).
+              variations: [
+                { variationId: "v1", key: "1", name: "Treatment" },
+                { variationId: "v0", key: "0", name: "Control" },
+              ],
+              phases: [
+                {
+                  name: "Phase 1",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  coverage: 1,
+                  // External seeder (GrowthBook UI) — phase carries IDs.
+                  trafficSplit: [
+                    { variationId: "v0", weight: 0.7 },
+                    { variationId: "v1", weight: 0.3 },
+                  ],
+                  condition: "{}",
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    // Weights re-keyed by ID: v1's weight (0.3) now first, v0's (0.7) second.
+    expect(body.phases[0].variationWeights).toEqual([0.3, 0.7]);
+  });
+
+  it("falls back to equal split when source trafficSplit IDs don't cover current variations (variation replaced)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      if (!init?.method || init.method === "GET") {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            experiment: {
+              id: "exp_1",
+              status: "draft",
+              type: "standard",
+              // v1 was replaced by v2 after seed; seeded IDs are stale.
+              variations: [
+                { variationId: "v0", key: "0", name: "Control" },
+                { variationId: "v2", key: "2", name: "New Treatment" },
+              ],
+              phases: [
+                {
+                  name: "Phase 1",
+                  dateStarted: "2026-03-01T00:00:00Z",
+                  coverage: 1,
+                  trafficSplit: [
+                    { variationId: "v0", weight: 0.7 },
+                    { variationId: "v1", weight: 0.3 },
+                  ],
+                  condition: "{}",
+                },
+              ],
+              settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+            },
+          },
+        });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "running",
+            variations: [],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "start_experiment");
+    const p = tool!.handler({ experimentId: "exp_1" });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases[0].variationWeights).toEqual([0.5, 0.5]);
+  });
 });
 
 describe("stop_experiment", () => {
@@ -1130,42 +1552,6 @@ describe("update_experiment_targeting", () => {
     expect(body.phases[0].trafficSplit).toBeUndefined();
     expect(body.phases[0].prerequisites).toEqual([]);
     expect(body.phases[0].savedGroupTargeting).toEqual([]);
-  });
-
-  it("rejects when status is draft", async () => {
-    vi.useFakeTimers();
-    const fetchSpy = vi.fn(async () =>
-      makeResponse({
-        ok: true,
-        status: 200,
-        json: {
-          experiment: {
-            id: "exp_1",
-            status: "draft",
-            variations: [],
-            phases: [],
-          },
-        },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchSpy);
-
-    const { server, tools } = makeServerCapture();
-    baseArgs.server = server;
-    const { registerExperimentTools } =
-      await import("../../src/tools/experiments/experiments.js");
-    registerExperimentTools(baseArgs);
-
-    const tool = tools.find((t) => t.name === "update_experiment_targeting");
-    const p = tool!.handler({
-      experimentId: "exp_1",
-      coverage: 0.5,
-    });
-    await vi.runAllTimersAsync();
-    const res = await p;
-
-    expect(res.content[0].text).toContain("draft");
-    expect(res.content[0].text).toContain("running");
   });
 
   it("rejects when status is stopped", async () => {
@@ -1657,6 +2043,498 @@ describe("update_experiment_targeting", () => {
     const body = JSON.parse(postCall!.body!);
     const newPhase = body.phases[body.phases.length - 1];
     expect(newPhase.namespace).toEqual({ namespaceId: "x", range: [0, 0.5] });
+  });
+
+  it("seeds Phase 1 on a draft with no existing phases (targetingCondition only, equal split, no status field)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const draftJson = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "draft",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases: [],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, draftJson);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"utm_source":"google"}',
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("draft");
+
+    const postCall = calls.find((c) => c.method === "POST");
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(postCall!.body!);
+
+    // Must NOT include status — experiment stays a draft.
+    expect(body.status).toBeUndefined();
+    // Body has phases as the only field.
+    expect(Object.keys(body)).toEqual(["phases"]);
+
+    expect(body.phases).toHaveLength(1);
+    const phase = body.phases[0];
+    expect(phase.name).toBe("Phase 1");
+    // POST schema requires phases[].dateStarted — must be a valid ISO string
+    // even though the draft hasn't actually launched. Status-aware rendering
+    // in formatExperimentDetail makes the draft read as "not yet launched".
+    expect(typeof phase.dateStarted).toBe("string");
+    expect(phase.dateStarted).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(phase.dateEnded).toBeUndefined();
+    expect(phase.coverage).toBe(1);
+    expect(phase.condition).toBe('{"utm_source":"google"}');
+    expect(phase.targetingCondition).toBe('{"utm_source":"google"}');
+    // Equal-split default across 2 variations.
+    expect(phase.variationWeights).toEqual([0.5, 0.5]);
+    expect(phase.trafficSplit).toBeUndefined();
+    expect(phase.prerequisites).toEqual([]);
+    expect(phase.savedGroupTargeting).toEqual([]);
+  });
+
+  it("draft + existing phases forces patchCurrent semantics even when mode='newPhase' is passed", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const draftWithPhaseJson = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "draft",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases: [
+          {
+            name: "Phase 1",
+            dateStarted: "2026-03-01T00:00:00Z",
+            coverage: 1,
+            variationWeights: [0.5, 0.5],
+            targetingCondition: '{"utm_source":"facebook"}',
+          },
+        ],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, draftWithPhaseJson);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      mode: "newPhase",
+      targetingCondition: '{"utm_source":"google"}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+
+    // Must NOT include status — experiment stays a draft.
+    expect(body.status).toBeUndefined();
+    // Despite mode='newPhase', draft is patched in place — only one phase.
+    expect(body.phases).toHaveLength(1);
+    expect(body.phases[0].dateStarted).toBe("2026-03-01T00:00:00Z");
+    expect(body.phases[0].dateEnded).toBeUndefined();
+    expect(body.phases[0].targetingCondition).toBe('{"utm_source":"google"}');
+    expect(body.phases[0].condition).toBe('{"utm_source":"google"}');
+  });
+
+  it("seeds Phase 1 on draft honoring coverage, trafficSplit, and phaseName overrides", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const draftJson = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "draft",
+        type: "standard",
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "Treatment" },
+        ],
+        phases: [],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, draftJson);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.8,
+      trafficSplit: [
+        { variationId: "v0", weight: 0.3 },
+        { variationId: "v1", weight: 0.7 },
+      ],
+      phaseName: "SEM rollout",
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.status).toBeUndefined();
+    expect(body.phases).toHaveLength(1);
+    const phase = body.phases[0];
+    expect(phase.name).toBe("SEM rollout");
+    expect(phase.coverage).toBe(0.8);
+    expect(phase.variationWeights).toEqual([0.3, 0.7]);
+    expect(phase.condition).toBe("{}");
+    expect(phase.targetingCondition).toBe("{}");
+  });
+
+  it("rejects when status is archived", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "archived",
+            variations: [],
+            phases: [],
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.5,
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("archived");
+    expect(res.content[0].text).toContain("archive_experiment");
+  });
+
+  it("rejects archived experiments even when status is 'draft' (archived flag is independent of status)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "draft",
+            archived: true,
+            variations: [
+              { variationId: "v0", key: "0", name: "Control" },
+              { variationId: "v1", key: "1", name: "Treatment" },
+            ],
+            phases: [],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.5,
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("archived");
+    expect(res.content[0].text).toContain("archive_experiment");
+
+    // Only the GET should have happened — no mutation.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(calls.find((c) => c.method === "POST")).toBeUndefined();
+  });
+
+  it("rejects archived experiments even when status is 'stopped' (archived check runs before status check)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "stopped",
+            archived: true,
+            variations: [
+              { variationId: "v0", key: "0", name: "Control" },
+              { variationId: "v1", key: "1", name: "Treatment" },
+            ],
+            phases: [
+              {
+                name: "Phase 1",
+                dateStarted: "2026-01-01T00:00:00Z",
+                dateEnded: "2026-02-01T00:00:00Z",
+                coverage: 1,
+                variationWeights: [0.5, 0.5],
+                condition: "{}",
+              },
+            ],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      coverage: 0.5,
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    // Should say "archived" / point to archive_experiment, NOT "resume_experiment".
+    expect(res.content[0].text).toContain("archived");
+    expect(res.content[0].text).toContain("archive_experiment");
+    expect(res.content[0].text).not.toContain("resume_experiment");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(calls.find((c) => c.method === "POST")).toBeUndefined();
+  });
+
+  it("drops stale variationWeights on a seeded draft patchCurrent when variation count changed", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const draftWithStaleWeightsJson = {
+      experiment: {
+        id: "exp_1",
+        name: "Test",
+        status: "draft",
+        type: "standard",
+        // 3 variations now, but the seeded phase only has 2 weights.
+        variations: [
+          { variationId: "v0", key: "0", name: "Control" },
+          { variationId: "v1", key: "1", name: "B" },
+          { variationId: "v2", key: "2", name: "C" },
+        ],
+        phases: [
+          {
+            name: "Phase 1",
+            dateStarted: "2026-03-01T00:00:00Z",
+            coverage: 0.8,
+            variationWeights: [0.5, 0.5],
+            condition: '{"utm_source":"facebook"}',
+            targetingCondition: '{"utm_source":"facebook"}',
+            savedGroupTargeting: [{ matchType: "all", savedGroups: ["sg_1"] }],
+          },
+        ],
+        settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+      },
+    };
+    const fetchSpy = makeFetchSpy(calls, draftWithStaleWeightsJson);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"utm_source":"google"}',
+    });
+    await vi.runAllTimersAsync();
+    await p;
+
+    const postCall = calls.find((c) => c.method === "POST");
+    const body = JSON.parse(postCall!.body!);
+    expect(body.phases).toHaveLength(1);
+    const phase = body.phases[0];
+    // Stale 2-element weights replaced by equal third-split.
+    expect(phase.variationWeights).toHaveLength(3);
+    expect(phase.variationWeights[0]).toBeCloseTo(1 / 3, 10);
+    expect(phase.variationWeights[1]).toBeCloseTo(1 / 3, 10);
+    expect(phase.variationWeights[2]).toBeCloseTo(1 / 3, 10);
+    // Other preserved fields survive.
+    expect(phase.condition).toBe('{"utm_source":"google"}');
+    expect(phase.targetingCondition).toBe('{"utm_source":"google"}');
+    expect(phase.savedGroupTargeting).toEqual([
+      { matchType: "all", savedGroups: ["sg_1"] },
+    ]);
+    expect(phase.coverage).toBe(0.8);
+  });
+
+  it("rejects draft patchCurrent when variations were cleared (would post weights for non-existent variations)", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: init?.body as string });
+      return makeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          experiment: {
+            id: "exp_1",
+            status: "draft",
+            archived: false,
+            variations: [], // variations cleared after seed
+            phases: [
+              {
+                name: "Phase 1",
+                dateStarted: "2026-03-01T00:00:00Z",
+                coverage: 1,
+                variationWeights: [0.5, 0.5],
+                condition: '{"utm_source":"google"}',
+              },
+            ],
+          },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    baseArgs.server = server;
+    const { registerExperimentTools } =
+      await import("../../src/tools/experiments/experiments.js");
+    registerExperimentTools(baseArgs);
+
+    const tool = tools.find((t) => t.name === "update_experiment_targeting");
+    const p = tool!.handler({
+      experimentId: "exp_1",
+      targetingCondition: '{"utm_source":"facebook"}',
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.content[0].text).toContain("no variations");
+    expect(res.content[0].text).toContain("update_experiment");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(calls.find((c) => c.method === "POST")).toBeUndefined();
+  });
+
+  it("renders draft patchCurrent confirmation with draft status + launch hint (not as a running update)", async () => {
+    const { formatExperimentTargetingUpdated } =
+      await import("../../src/format-responses.js");
+    const rendered = formatExperimentTargetingUpdated(
+      {
+        experiment: {
+          id: "exp_1",
+          name: "SEM Non-Brand",
+          status: "draft",
+          type: "standard",
+          variations: [
+            { variationId: "v0", key: "0", name: "Control" },
+            { variationId: "v1", key: "1", name: "Treatment" },
+          ],
+          phases: [
+            {
+              name: "Phase 1",
+              dateStarted: "2026-03-01T00:00:00Z",
+              coverage: 1,
+              variationWeights: [0.5, 0.5],
+              condition: '{"utm_source":"google"}',
+              targetingCondition: '{"utm_source":"google"}',
+            },
+          ],
+          settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+        },
+      } as any,
+      "https://app.growthbook.io",
+      "patchCurrent",
+    );
+    expect(rendered).toContain("draft");
+    expect(rendered).toMatch(/start_experiment|launch/i);
+    expect(rendered).not.toContain("Patched current phase in place");
+  });
+
+  it("renders seeded draft phase as 'not yet launched' regardless of dateStarted (status-aware)", async () => {
+    const { formatExperimentDetail } =
+      await import("../../src/format-responses.js");
+    const rendered = formatExperimentDetail(
+      {
+        experiment: {
+          id: "exp_1",
+          name: "SEM Non-Brand",
+          status: "draft",
+          type: "standard",
+          variations: [
+            { variationId: "v0", key: "0", name: "Control" },
+            { variationId: "v1", key: "1", name: "Treatment" },
+          ],
+          phases: [
+            {
+              name: "Phase 1",
+              dateStarted: "2026-03-01T00:00:00Z",
+              coverage: 1,
+              variationWeights: [0.5, 0.5],
+              condition: '{"utm_source":"google"}',
+              targetingCondition: '{"utm_source":"google"}',
+            },
+          ],
+          settings: { goals: [], guardrails: [], secondaryMetrics: [] },
+        },
+      } as any,
+      "https://app.example.com",
+    );
+
+    expect(rendered).toContain("not yet launched");
+    expect(rendered).not.toContain("ongoing");
+    // Confirm we did not render the raw dateStarted in the phase line.
+    expect(rendered).not.toContain("2026-03-01T00:00:00Z → ongoing");
   });
 });
 
