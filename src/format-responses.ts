@@ -485,7 +485,15 @@ export function formatExperimentDetail(
     parts.push("");
     parts.push(`**Phases (${e.phases.length}):**`);
     for (const [idx, phase] of e.phases.entries()) {
-      const dateRange = `${phase.dateStarted || "?"} → ${phase.dateEnded || "ongoing"}`;
+      // Drafts always carry a placeholder dateStarted (the POST schema
+      // requires it), but the experiment hasn't actually launched. Render
+      // status-aware so seeded drafts don't read as active experiments.
+      const dateRange =
+        e.status === "draft"
+          ? "not yet launched"
+          : phase.dateStarted
+            ? `${phase.dateStarted} → ${phase.dateEnded || "ongoing"}`
+            : "not yet launched";
       const traffic = phase.trafficSplit?.length
         ? phase.trafficSplit
             .map((t) => `${t.variationId}: ${(t.weight * 100).toFixed(0)}%`)
@@ -665,7 +673,7 @@ export function formatExperimentArchived(
 export function formatExperimentTargetingUpdated(
   data: UpdateExperimentResponse,
   appOrigin: string,
-  mode: "newPhase" | "patchCurrent",
+  action: "seeded" | "newPhase" | "patchCurrent",
 ): string {
   const e = data.experiment;
   if (!e?.id) return "Experiment targeting updated, but details unavailable.";
@@ -673,13 +681,25 @@ export function formatExperimentTargetingUpdated(
   const phases = e.phases || [];
   const phaseCount = phases.length;
   const currentPhase = phases[phases.length - 1];
+  const isDraft = e.status === "draft";
 
-  const parts: string[] = [
-    `**Experiment \`${e.id}\` targeting updated.**`,
-    mode === "newPhase"
-      ? `Appended new phase (now at ${phaseCount} phase${phaseCount === 1 ? "" : "s"}).`
-      : `Patched current phase in place (phase ${phaseCount}).`,
-  ];
+  const headline =
+    action === "seeded" || (action === "patchCurrent" && isDraft)
+      ? `**Experiment \`${e.id}\` targeting configured (draft).**`
+      : `**Experiment \`${e.id}\` targeting updated.**`;
+
+  let actionLine: string;
+  if (action === "seeded") {
+    actionLine = `Seeded Phase 1 on draft. A human must launch the experiment in the GrowthBook UI (or call start_experiment) to begin enrolling users. (Note: SDK connections with \`includeDraftExperiments\` enabled — uncommon, used for QA/preview — will enroll users immediately; verify with the team before seeding production-bound targeting.)`;
+  } else if (action === "patchCurrent" && isDraft) {
+    actionLine = `Patched the seeded phase on draft (phase ${phaseCount}). The experiment is still a draft — a human must launch it in the GrowthBook UI (or call start_experiment) to begin enrolling users. (Note: SDK connections with \`includeDraftExperiments\` enabled — uncommon, used for QA/preview — will already be enrolling users into this draft.)`;
+  } else if (action === "newPhase") {
+    actionLine = `Appended new phase (now at ${phaseCount} phase${phaseCount === 1 ? "" : "s"}).`;
+  } else {
+    actionLine = `Patched current phase in place (phase ${phaseCount}).`;
+  }
+
+  const parts: string[] = [headline, actionLine];
 
   if (currentPhase) {
     const details: string[] = [];
