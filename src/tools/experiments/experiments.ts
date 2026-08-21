@@ -146,23 +146,25 @@ export function registerExperimentTools({
       title: "Get Experiments",
       description:
         "Lists experiments or fetches details for a specific experiment. Supports three modes: metadata (default) returns experiment config without results, good for listing; summary fetches results and returns key statistics including win rate and top performers, good for quick analysis; full returns complete results with all metrics (warning: large payloads). Use this to review recent experiments (mostRecent=true), analyze results, or check experiment status (draft, running, stopped). Single experiment fetch includes a link to view in GrowthBook.",
-      inputSchema: z.object({
-        project: z
-          .string()
-          .describe("The ID of the project to filter experiments by")
-          .optional(),
-        mode: z
-          .enum(["metadata", "summary", "full"])
-          .default("metadata")
-          .describe(
-            "The mode to use to fetch experiments. Metadata mode returns experiment config without results. Summary mode fetches results and returns pruned key stats for quick analysis. Full mode fetches and returns complete results data. WARNING: Full mode may return large payloads.",
-          ),
-        experimentId: z
-          .string()
-          .describe("The ID of the experiment to fetch")
-          .optional(),
-        ...paginationSchema,
-      }),
+      inputSchema: z
+        .object({
+          project: z
+            .string()
+            .describe("The ID of the project to filter experiments by")
+            .optional(),
+          mode: z
+            .enum(["metadata", "summary", "full"])
+            .default("metadata")
+            .describe(
+              "The mode to use to fetch experiments. Metadata mode returns experiment config without results. Summary mode fetches results and returns pruned key stats for quick analysis. Full mode fetches and returns complete results data. WARNING: Full mode may return large payloads.",
+            ),
+          experimentId: z
+            .string()
+            .describe("The ID of the experiment to fetch")
+            .optional(),
+          ...paginationSchema,
+        })
+        .strict(),
       annotations: {
         readOnlyHint: true,
       },

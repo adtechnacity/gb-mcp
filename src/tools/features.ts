@@ -244,11 +244,13 @@ export function registerFeatureTools({
       title: "Get Feature Flags",
       description:
         "Lists feature flags with full details (rules, environments, values) or fetches a single flag by ID. Returns up to 100 flags per page. Use to inspect flag configuration, rules, and status. For a lightweight list of all flag IDs (no limit), use list_feature_keys instead.",
-      inputSchema: z.object({
-        project: featureFlagSchema.project.optional(),
-        featureFlagId: featureFlagSchema.id.optional(),
-        ...paginationSchema,
-      }),
+      inputSchema: z
+        .object({
+          project: featureFlagSchema.project.optional(),
+          featureFlagId: featureFlagSchema.id.optional(),
+          ...paginationSchema,
+        })
+        .strict(),
       annotations: {
         readOnlyHint: true,
       },
