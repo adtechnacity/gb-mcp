@@ -38,6 +38,64 @@ import { handleSummaryMode, getMetricLookup } from "./experiment-summary.js";
 
 interface ExperimentTools extends ExtendedToolsInterface {}
 
+// Maps user-supplied trafficSplit (variationId + weight pairs) into a
+// variationWeights array ordered by experiment.variations. The GrowthBook API
+// reads variationWeights positionally (zipping with the canonical variations
+// order), so passing trafficSplit in a different order would silently apply
+// weights to the wrong variations. Callers must validate trafficSplit covers
+// every variation exactly once before calling this.
+function trafficSplitToOrderedWeights(
+  trafficSplit: { variationId: string; weight: number }[],
+  variations: { variationId: string }[],
+): number[] {
+  const weightById = new Map(
+    trafficSplit.map((s) => [s.variationId, s.weight]),
+  );
+  return variations.map((v) => weightById.get(v.variationId) ?? 0);
+}
+
+// Realigns a source phase's weights to the current experiment.variations order.
+// Used when carrying a seeded phase forward (draft launch or draft patch). If
+// the source phase has trafficSplit with variationIds (e.g. seeded via the
+// GrowthBook UI), map weight→variation by ID so reorders/replacements don't
+// silently apply weights to the wrong variations. Falls back to positional
+// preservation when lengths match; equal-splits otherwise. Same-length
+// positional reorders without IDs remain undetectable.
+function realignSeededWeightsToVariations(
+  sourcePhase: any,
+  variations: { variationId: string }[],
+): number[] {
+  const variationCount = variations.length;
+  const seededSplit = Array.isArray(sourcePhase?.trafficSplit)
+    ? sourcePhase.trafficSplit
+    : null;
+  if (
+    seededSplit &&
+    seededSplit.every((s: any) => typeof s?.variationId === "string")
+  ) {
+    const weightById = new Map<string, number>(
+      seededSplit.map((s: any) => [s.variationId, s.weight]),
+    );
+    const allMapped = variations.every((v: any) =>
+      weightById.has(v.variationId),
+    );
+    return allMapped
+      ? variations.map((v: any) => weightById.get(v.variationId)!)
+      : variations.map(() => 1 / variationCount);
+  }
+  const seededWeights = Array.isArray(sourcePhase?.variationWeights)
+    ? sourcePhase.variationWeights
+    : null;
+  if (
+    !seededWeights ||
+    seededWeights.length === 0 ||
+    seededWeights.length !== variationCount
+  ) {
+    return variations.map(() => 1 / variationCount);
+  }
+  return seededWeights;
+}
+
 function getPhaseToPostPhase(p: any): Record<string, any> {
   const condition = p.condition ?? p.targetingCondition ?? "{}";
   const variationWeights = Array.isArray(p.variationWeights)
@@ -745,7 +803,7 @@ export function registerExperimentTools({
     {
       title: "Start Experiment",
       description:
-        "Launches a draft experiment into 'running' status. The experiment must be in 'draft' status. Use get_experiments to check status first. Use update_experiment to configure metrics before launching. After launch, use update_experiment_targeting to change targeting without flipping status.",
+        "Launches a draft experiment into 'running' status. The experiment must be in 'draft' status. Use get_experiments to check status first. Use update_experiment to configure metrics before launching. After launch, use update_experiment_targeting to change targeting without flipping status. Any phase configuration pre-seeded on the draft (via update_experiment_targeting) is preserved at launch; explicit `coverage`, `trafficSplit`, or `targetingCondition` args here override the seeded values for those fields only.",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         coverage: z
@@ -753,8 +811,9 @@ export function registerExperimentTools({
           .min(0)
           .max(1)
           .optional()
-          .default(1.0)
-          .describe("Traffic percentage 0-1 (default: 1.0)"),
+          .describe(
+            "Traffic percentage 0-1. If omitted, preserves the seeded phase's coverage on a pre-configured draft, otherwise defaults to 1.0.",
+          ),
         trafficSplit: z
           .array(
             z.object({
@@ -764,14 +823,14 @@ export function registerExperimentTools({
           )
           .optional()
           .describe(
-            "Custom traffic split. Defaults to equal split across all variations.",
+            "Custom traffic split. If omitted, preserves the seeded phase's variation weights on a pre-configured draft, otherwise defaults to equal split across all variations.",
           ),
         targetingCondition: jsonStringSchema(
           'targetingCondition must be a valid JSON string (e.g., \'{"country":"US"}\')',
         )
           .optional()
           .describe(
-            'MongoDB-style targeting condition for experiment entry, as a JSON string. Example: \'{"country": "US"}\'.',
+            'MongoDB-style targeting condition for experiment entry, as a JSON string. Example: \'{"country": "US"}\'. If omitted, preserves the seeded phase\'s condition on a pre-configured draft, otherwise defaults to "{}".',
           ),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false },
@@ -797,14 +856,7 @@ export function registerExperimentTools({
           };
         }
 
-        const split =
-          trafficSplit ||
-          experiment.variations.map((v: any) => ({
-            variationId: v.variationId,
-            weight: 1 / experiment.variations.length,
-          }));
-
-        if (split.length === 0) {
+        if (!experiment.variations || experiment.variations.length === 0) {
           return {
             content: [
               {
@@ -815,38 +867,90 @@ export function registerExperimentTools({
           };
         }
 
-        const validVariationIds = new Set(
-          experiment.variations.map((v: any) => v.variationId),
-        );
-        const uniqueSplitIds = new Set(split.map((v: any) => v.variationId));
-        const totalWeight = split.reduce(
-          (sum: number, v: any) => sum + v.weight,
-          0,
-        );
+        // Validate explicitly-provided trafficSplit only (no validation needed
+        // when falling back to existing phase weights or equal-split default).
+        if (trafficSplit !== undefined) {
+          const validVariationIds = new Set(
+            experiment.variations.map((v: any) => v.variationId),
+          );
+          const uniqueSplitIds = new Set(
+            trafficSplit.map((v: any) => v.variationId),
+          );
+          const totalWeight = trafficSplit.reduce(
+            (sum: number, v: any) => sum + v.weight,
+            0,
+          );
 
-        if (
-          split.length !== uniqueSplitIds.size ||
-          uniqueSplitIds.size !== experiment.variations.length ||
-          [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
-          Math.abs(totalWeight - 1) > 1e-6
-        ) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Invalid trafficSplit. Provide each variation exactly once (no duplicates) and ensure the weights sum to 1.",
-              },
-            ],
-          };
+          if (
+            trafficSplit.length !== uniqueSplitIds.size ||
+            uniqueSplitIds.size !== experiment.variations.length ||
+            [...uniqueSplitIds].some((id) => !validVariationIds.has(id)) ||
+            Math.abs(totalWeight - 1) > 1e-6
+          ) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Invalid trafficSplit. Provide each variation exactly once (no duplicates) and ensure the weights sum to 1.",
+                },
+              ],
+            };
+          }
         }
 
-        const newPhase = getPhaseToPostPhase({
-          name: "Phase 1",
-          dateStarted: new Date().toISOString(),
-          coverage: coverage ?? 1.0,
-          trafficSplit: split,
-          targetingCondition: targetingCondition ?? "{}",
-        });
+        const existingPhases = experiment.phases || [];
+        const now = new Date().toISOString();
+
+        let newPhase: Record<string, any>;
+
+        if (existingPhases.length === 0) {
+          // Fresh draft — build Phase 1 from args + defaults (existing behavior).
+          // Remap user-supplied weights by variationId so a caller passing
+          // trafficSplit in a different order than experiment.variations doesn't
+          // silently swap weights (GrowthBook stores variationWeights positionally).
+          const variationCount = experiment.variations.length;
+          const variationWeights = trafficSplit
+            ? trafficSplitToOrderedWeights(trafficSplit, experiment.variations)
+            : experiment.variations.map(() => 1 / variationCount);
+          newPhase = getPhaseToPostPhase({
+            name: "Phase 1",
+            dateStarted: now,
+            coverage: coverage ?? 1.0,
+            variationWeights,
+            targetingCondition: targetingCondition ?? "{}",
+          });
+        } else {
+          // Pre-seeded draft — use the last existing phase as the base for launch.
+          // Overlay only explicitly-provided fields.
+          const lastExisting = existingPhases[existingPhases.length - 1];
+          const basePost = getPhaseToPostPhase(lastExisting);
+          // Drop stopped-phase artifacts (defensive: drafts shouldn't have these,
+          // but if reasonForStopping/dateEnded leaked in, strip them).
+          delete basePost.dateEnded;
+          delete basePost.reason;
+
+          basePost.variationWeights = realignSeededWeightsToVariations(
+            lastExisting,
+            experiment.variations,
+          );
+
+          const merged: Record<string, any> = { ...basePost };
+          merged.name = lastExisting.name || "Phase 1";
+          merged.dateStarted = now;
+
+          if (coverage !== undefined) merged.coverage = coverage;
+          if (targetingCondition !== undefined) {
+            merged.condition = targetingCondition;
+            merged.targetingCondition = targetingCondition;
+          }
+          if (trafficSplit !== undefined) {
+            merged.variationWeights = trafficSplitToOrderedWeights(
+              trafficSplit,
+              experiment.variations,
+            );
+          }
+          newPhase = merged;
+        }
 
         const res = await fetchWithRateLimit(
           `${baseApiUrl}/api/v1/experiments/${experimentId}`,
@@ -888,7 +992,7 @@ export function registerExperimentTools({
     {
       title: "Update Experiment Targeting",
       description:
-        "Changes targeting on a running experiment without flipping its status. Use this when you need to swap targeting conditions, saved groups, prerequisites, namespace, traffic coverage, or variation weights mid-flight (e.g., change a UTM source filter on a Facebook experiment). Defaults to mode='newPhase' which appends a new phase — recommended for clean analysis since the previous data segment stays intact. Use mode='patchCurrent' only for typo fixes or pre-launch tweaks. Contrast with update_experiment (no targeting/phase fields) and start_experiment (only works on draft).",
+        "Configures targeting on a draft or running experiment without flipping its status. Use this to swap targeting conditions, saved groups, prerequisites, namespace, traffic coverage, or variation weights — including pre-configuring a draft so a human can launch it later in the GrowthBook UI. For drafts, the tool always seeds or patches a single phase (the `mode` argument is ignored — drafts cannot have multiple phases). For running experiments, defaults to mode='newPhase' which appends a new phase (recommended for clean analysis since the previous data segment stays intact); use mode='patchCurrent' for typo fixes. Contrast with update_experiment (no targeting/phase fields), start_experiment (atomically launches a draft into running), and resume_experiment (relaunches a stopped experiment).",
       inputSchema: z.object({
         experimentId: z.string().describe("Experiment ID"),
         mode: z
@@ -1005,24 +1109,30 @@ export function registerExperimentTools({
         const getData = await getRes.json();
         const experiment = getData.experiment;
 
-        if (experiment.status !== "running") {
+        if (experiment.archived) {
           return {
             content: [
               {
                 type: "text",
-                text: `Cannot update targeting — current status is '${experiment.status}'. Only 'running' experiments support mid-flight targeting changes. Use start_experiment for drafts or update_experiment for non-targeting fields.`,
+                text: "Cannot update targeting — experiment is archived. Unarchive it with archive_experiment (archived=false) before updating targeting.",
               },
             ],
           };
         }
 
-        const existingPhases = [...(experiment.phases || [])];
-        if (existingPhases.length === 0) {
+        if (experiment.status !== "running" && experiment.status !== "draft") {
+          // ExperimentStatus is "draft" | "running" | "stopped" — archived is
+          // a separate boolean caught above. Only "stopped" reaches this branch
+          // among the post-guard statuses.
+          const suggestion =
+            experiment.status === "stopped"
+              ? "Use resume_experiment to relaunch a stopped experiment with new targeting."
+              : "Only 'draft' and 'running' experiments support targeting changes via this tool.";
           return {
             content: [
               {
                 type: "text",
-                text: "Cannot update targeting — experiment has no existing phases. Use start_experiment first.",
+                text: `Cannot update targeting — current status is '${experiment.status}'. ${suggestion}`,
               },
             ],
           };
@@ -1057,8 +1167,21 @@ export function registerExperimentTools({
           }
         }
 
-        const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
-        const lastPhasePost = existingPostPhases[existingPostPhases.length - 1];
+        const existingPhases = [...(experiment.phases || [])];
+        const isDraft = experiment.status === "draft";
+        const isSeeding = isDraft && existingPhases.length === 0;
+
+        // Running experiments require at least one existing phase (start_experiment seeds Phase 1).
+        if (!isDraft && existingPhases.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Cannot update targeting — experiment has no existing phases. Use start_experiment first.",
+              },
+            ],
+          };
+        }
 
         const overrides: Record<string, any> = {};
         if (targetingCondition !== undefined) {
@@ -1077,12 +1200,85 @@ export function registerExperimentTools({
         }
         if (coverage !== undefined) overrides.coverage = coverage;
         if (trafficSplit !== undefined)
-          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+          overrides.variationWeights = trafficSplitToOrderedWeights(
+            trafficSplit,
+            experiment.variations || [],
+          );
 
         const now = new Date().toISOString();
         let phases: any[];
+        let action: "seeded" | "newPhase" | "patchCurrent";
 
-        if (resolvedMode === "newPhase") {
+        if (isSeeding) {
+          // Draft + no existing phases — seed Phase 1 from overrides, equal-split fallback.
+          const variations = experiment.variations || [];
+          if (variations.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Cannot seed a phase — experiment has no variations. Use update_experiment to set variations first.",
+                },
+              ],
+            };
+          }
+          const defaultWeights = variations.map(() => 1 / variations.length);
+          // GrowthBook POST schema requires phases[].dateStarted; the draft
+          // isn't actually "live" — formatExperimentDetail keys off
+          // experiment.status === "draft" to render the phase as not yet
+          // launched regardless of dateStarted.
+          const seededPhase = getPhaseToPostPhase({
+            name: phaseName || "Phase 1",
+            dateStarted: now,
+            coverage: coverage ?? 1,
+            targetingCondition: targetingCondition ?? "{}",
+            variationWeights: trafficSplit
+              ? trafficSplitToOrderedWeights(trafficSplit, variations)
+              : defaultWeights,
+            ...(savedGroupTargeting !== undefined
+              ? { savedGroupTargeting }
+              : {}),
+            ...(prerequisites !== undefined ? { prerequisites } : {}),
+            ...(namespace && namespace !== null ? { namespace } : {}),
+          });
+          phases = [seededPhase];
+          action = "seeded";
+        } else if (isDraft) {
+          // Draft + has phases — force patchCurrent semantics regardless of `mode`.
+          if ((experiment.variations?.length ?? 0) === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Cannot patch targeting — draft has no variations. The seeded phase's weights would target variations that no longer exist. Use update_experiment to set variations first.",
+                },
+              ],
+            };
+          }
+          const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
+          const lastPhasePost =
+            existingPostPhases[existingPostPhases.length - 1];
+          const lastExisting = existingPhases[existingPhases.length - 1];
+          const patchedPhase = { ...lastPhasePost, ...overrides };
+          if (clearNamespace) delete patchedPhase.namespace;
+          // Realign weights from the raw source phase (which retains
+          // trafficSplit IDs from the GET response) — getPhaseToPostPhase
+          // flattens trafficSplit into positional variationWeights, losing the
+          // ID info needed to detect reorders. The user's explicit trafficSplit
+          // override (already in `overrides`) is applied via the spread above
+          // and takes precedence; only realign when the caller didn't pass one.
+          if (trafficSplit === undefined) {
+            patchedPhase.variationWeights = realignSeededWeightsToVariations(
+              lastExisting,
+              experiment.variations,
+            );
+          }
+          phases = [...existingPostPhases.slice(0, -1), patchedPhase];
+          action = "patchCurrent";
+        } else if (resolvedMode === "newPhase") {
+          const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
+          const lastPhasePost =
+            existingPostPhases[existingPostPhases.length - 1];
           const previousPhase = { ...lastPhasePost, dateEnded: now };
           const nextPhaseNumber = existingPostPhases.length + 1;
           const newPhase: Record<string, any> = {
@@ -1099,10 +1295,15 @@ export function registerExperimentTools({
             previousPhase,
             newPhase,
           ];
+          action = "newPhase";
         } else {
+          const existingPostPhases = existingPhases.map(getPhaseToPostPhase);
+          const lastPhasePost =
+            existingPostPhases[existingPostPhases.length - 1];
           const patchedPhase = { ...lastPhasePost, ...overrides };
           if (clearNamespace) delete patchedPhase.namespace;
           phases = [...existingPostPhases.slice(0, -1), patchedPhase];
+          action = "patchCurrent";
         }
 
         const res = await fetchWithRateLimit(
@@ -1119,11 +1320,7 @@ export function registerExperimentTools({
           content: [
             {
               type: "text",
-              text: formatExperimentTargetingUpdated(
-                data,
-                appOrigin,
-                resolvedMode,
-              ),
+              text: formatExperimentTargetingUpdated(data, appOrigin, action),
             },
           ],
         };
@@ -1133,7 +1330,7 @@ export function registerExperimentTools({
             error,
             `updating targeting for experiment '${experimentId}'`,
             [
-              "The experiment must be in 'running' status.",
+              "The experiment must be in 'draft' or 'running' status. Use resume_experiment for stopped experiments.",
               "Use get_experiments to check status and current phase configuration.",
               "If trafficSplit is provided, weights must sum to 1 and cover every variation exactly once.",
             ],
@@ -1391,7 +1588,10 @@ export function registerExperimentTools({
         const overrides: Record<string, any> = {};
         if (coverage !== undefined) overrides.coverage = coverage;
         if (trafficSplit !== undefined)
-          overrides.variationWeights = trafficSplit.map((s) => s.weight);
+          overrides.variationWeights = trafficSplitToOrderedWeights(
+            trafficSplit,
+            experiment.variations || [],
+          );
         if (targetingCondition !== undefined) {
           overrides.condition = targetingCondition;
           overrides.targetingCondition = targetingCondition;
