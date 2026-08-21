@@ -67,9 +67,24 @@ export function formatProjects(data: ListProjectsResponse): string {
 
 // ─── Data Sources ───────────────────────────────────────────────────
 
+const DATA_SOURCE_CONNECTION_NOTE =
+  "Connection settings (host, credentials) are never exposed by the API — manage those in the GrowthBook UI (Settings → Data Sources).";
+
+// Fenced SQL block whose fence is always longer than any backtick run in
+// the SQL itself, so warehouse-authored SQL can't break out of the fence.
+function sqlBlock(sql: string): string[] {
+  const longestBacktickRun =
+    sql.match(/`+/g)?.reduce((max, run) => Math.max(max, run.length), 0) ?? 0;
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
+  return ["", `${fence}sql`, sql, fence];
+}
+
 export function formatDataSources(data: ListDataSourcesResponse): string {
   const dataSources = data.dataSources || [];
   if (dataSources.length === 0) {
+    if (data.total) {
+      return `No data sources in this page (the organization has ${data.total}). Retry with a smaller offset.`;
+    }
     return "No data sources found. Data sources are configured in the GrowthBook UI (Settings → Data Sources).";
   }
 
@@ -91,17 +106,23 @@ export function formatDataSources(data: ListDataSourcesResponse): string {
     return parts.join("\n");
   });
 
+  const pagination = data.hasMore
+    ? `\n\nShowing ${dataSources.length} of ${data.total}. Use offset=${data.nextOffset} to see more.`
+    : "";
+
   return [
     `**${dataSources.length} data source(s):**`,
     "",
     ...lines,
     "",
-    "Pass a `dataSourceId` to see full details including exposure/assignment query SQL. Connection settings (host, credentials) are never exposed by the API — manage those in the GrowthBook UI (Settings → Data Sources).",
+    `Pass a \`datasourceId\` to see full details including exposure/assignment query SQL. ${DATA_SOURCE_CONNECTION_NOTE}`,
+    pagination,
   ].join("\n");
 }
 
 export function formatDataSourceDetail(data: GetDataSourceResponse): string {
   const ds = data.dataSource;
+  if (!ds) return "Data source not found.";
   const lines = [
     `**Data Source: ${ds.name}** (id: \`${ds.id}\`, type: ${ds.type})`,
   ];
@@ -125,7 +146,7 @@ export function formatDataSourceDetail(data: GetDataSourceResponse): string {
         `- **${q.name}** (id: \`${q.id}\`, identifierType: \`${q.identifierType}\`)`,
       );
       if (q.description) lines.push(`  ${q.description}`);
-      if (q.sql) lines.push("", "```sql", q.sql, "```");
+      if (q.sql) lines.push(...sqlBlock(q.sql));
     }
   }
 
@@ -133,16 +154,13 @@ export function formatDataSourceDetail(data: GetDataSourceResponse): string {
     lines.push("", "**Identifier join queries:**");
     for (const q of ds.identifierJoinQueries) {
       lines.push(
-        `- Joins: ${q.identifierTypes.map((t) => `\`${t}\``).join(" ↔ ")}`,
+        `- Joins: ${(q.identifierTypes ?? []).map((t) => `\`${t}\``).join(" ↔ ")}`,
       );
-      if (q.sql) lines.push("", "```sql", q.sql, "```");
+      if (q.sql) lines.push(...sqlBlock(q.sql));
     }
   }
 
-  lines.push(
-    "",
-    "Note: connection settings (host, credentials) are never exposed by the API — manage those in the GrowthBook UI (Settings → Data Sources).",
-  );
+  lines.push("", `Note: ${DATA_SOURCE_CONNECTION_NOTE}`);
 
   return lines.join("\n");
 }

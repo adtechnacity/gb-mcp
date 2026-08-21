@@ -247,7 +247,38 @@ describe("read-only tool handlers (URL + headers)", () => {
     expect(res.content?.[0]?.type).toBe("text");
   });
 
-  it("get_data_sources with dataSourceId fetches the single-resource endpoint", async () => {
+  it("get_data_sources passes the project filter as projectId", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (url: string) => {
+      expect(url).toBe(
+        "https://api.example.com/api/v1/data-sources?limit=10&offset=0&projectId=p1",
+      );
+      return makeResponse({ ok: true, status: 200, json: { dataSources: [] } });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    const { registerDataSourceTools } =
+      await import("../../src/tools/data-sources.js");
+    registerDataSourceTools({
+      server,
+      baseApiUrl: "https://api.example.com",
+      apiKey: "key",
+    });
+
+    const tool = tools.find((t) => t.name === "get_data_sources")!;
+    const p = tool.handler({
+      limit: 10,
+      offset: 0,
+      mostRecent: false,
+      project: "p1",
+    });
+    await vi.runAllTimersAsync();
+    const res = await p;
+    expect(res.content?.[0]?.type).toBe("text");
+  });
+
+  it("get_data_sources with datasourceId fetches the single-resource endpoint", async () => {
     vi.useFakeTimers();
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.example.com/api/v1/data-sources/ds_abc123");
@@ -297,12 +328,39 @@ describe("read-only tool handlers (URL + headers)", () => {
     });
 
     const tool = tools.find((t) => t.name === "get_data_sources")!;
-    const p = tool.handler({ dataSourceId: "ds_abc123" });
+    const p = tool.handler({ datasourceId: "ds_abc123" });
     await vi.runAllTimersAsync();
     const res = await p;
     const text = res.content?.[0]?.text as string;
     expect(text).toContain("Prod Postgres");
     expect(text).toContain("ds_abc123");
     expect(text).toContain("experiment_exposures");
+  });
+
+  it("get_data_sources URL-encodes the datasourceId path segment", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (url: string) => {
+      expect(url).toBe(
+        "https://api.example.com/api/v1/data-sources/ds%20abc%2F..",
+      );
+      return makeResponse({ ok: false, status: 404, json: {} });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { server, tools } = makeServerCapture();
+    const { registerDataSourceTools } =
+      await import("../../src/tools/data-sources.js");
+    registerDataSourceTools({
+      server,
+      baseApiUrl: "https://api.example.com",
+      apiKey: "key",
+    });
+
+    const tool = tools.find((t) => t.name === "get_data_sources")!;
+    const p = tool.handler({ datasourceId: "ds abc/.." }).catch((e: any) => e);
+    await vi.runAllTimersAsync();
+    const err = await p;
+    expect(err).toBeInstanceOf(Error);
+    expect(fetchSpy).toHaveBeenCalled();
   });
 });

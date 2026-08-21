@@ -473,7 +473,9 @@ export function registerMetricsTools({
       inputSchema: z.object({
         name: z.string().describe("Fact table name"),
         description: z.string().optional().describe("Description"),
-        datasource: z.string().describe("Datasource ID"),
+        datasource: z
+          .string()
+          .describe("Datasource ID (use get_data_sources to find IDs)"),
         userIdTypes: z
           .array(z.string())
           .describe("User ID types (e.g. ['user_id'])"),
@@ -541,7 +543,7 @@ export function registerMetricsTools({
       } catch (error) {
         throw new Error(
           formatApiError(error, `creating fact table '${name}'`, [
-            "Check that the datasource ID is valid.",
+            "Check that the datasource ID is valid — use get_data_sources to list valid IDs.",
             "Use list_fact_tables to see existing fact tables.",
           ]),
         );
