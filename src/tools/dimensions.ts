@@ -34,7 +34,7 @@ export function registerDimensionTools({
           .string()
           .optional()
           .describe(
-            "Filter by datasource ID. Find datasource IDs via get_defaults.",
+            "Filter by datasource ID. Find datasource IDs via get_data_sources.",
           ),
         limit: z
           .number()
@@ -89,7 +89,7 @@ export function registerDimensionTools({
     {
       title: "Create Dimension",
       description:
-        "Creates a dimension for segmenting experiment results. A dimension is a SQL query that returns user_id and value columns, used to break down experiment metrics (e.g., by country, device type, plan tier). Find a valid datasourceId from get_defaults (returns the default), or by inspecting existing dimensions via list_dimensions.",
+        "Creates a dimension for segmenting experiment results. A dimension is a SQL query that returns user_id and value columns, used to break down experiment metrics (e.g., by country, device type, plan tier). Find a valid datasourceId via get_data_sources (lists all datasources), or from get_defaults (returns the default).",
       inputSchema: z.object({
         name: z.string().describe("Dimension name (e.g., 'Country')"),
         description: z.string().optional().describe("Description"),
@@ -150,7 +150,7 @@ export function registerDimensionTools({
       } catch (error) {
         throw new Error(
           formatApiError(error, `creating dimension '${name}'`, [
-            "Check that the datasource ID is valid.",
+            "Check that the datasource ID is valid — use get_data_sources to list valid IDs.",
             "The SQL query must return user identifier and dimension value columns.",
           ]),
         );

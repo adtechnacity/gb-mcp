@@ -201,6 +201,10 @@
     {
       "name": "delete_dimension",
       "description": "Delete a dimension. Destructive — experiment analyses using it will lose the breakdown."
+    },
+    {
+      "name": "get_data_sources",
+      "description": "List data sources (warehouses GrowthBook queries for experiment analysis) or fetch one by ID with its assignment query SQL."
     }
   ],
   "prompts": [

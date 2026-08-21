@@ -61,6 +61,7 @@ Add the MCP server to your AI tool of choice. See the [official docs](https://do
 | `create_fact_metric`       | Create a proportion, mean, quantile, or ratio fact metric |
 | `update_fact_metric`       | Update an existing fact metric                            |
 | `delete_fact_metric`       | Delete a fact metric                                      |
+| `get_data_sources`         | List data sources or fetch one with assignment query SQL  |
 | `list_fact_tables`         | List available fact tables (SQL data sources)             |
 | `create_fact_table`        | Create a new fact table                                   |
 | `update_fact_table`        | Update an existing fact table                             |

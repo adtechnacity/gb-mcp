@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `get_data_sources` tool — lists data sources (the warehouses GrowthBook queries for experiment analysis) or fetches one by ID, including the full exposure/assignment query SQL in single-ID mode. Supports an optional `project` filter and reports pagination (`Showing X of Y`). Gives agents a way to discover the datasource ID required by `create_fact_table` and `create_dimension` (previously undiscoverable — the error message said "check the datasource ID is valid" with no tool to check) and to audit how experiment exposure is queried. Descriptions and error hints of `create_fact_table`, `create_dimension`, `list_dimensions`, and `set_user_defaults` now point at it. Connection settings (host, credentials) are never exposed by the API and remain UI-only.
+
 ### Changed
 
 - `update_experiment_targeting` now supports draft experiments — agents can configure targeting (condition, saved groups, prerequisites, namespace, coverage, traffic split) before a human launches the experiment via the GrowthBook UI. Previously only running experiments were accepted, blocking agent-driven setup of SEM-targeted drafts. On drafts the tool always seeds/patches a single phase (the `mode` argument is ignored — drafts cannot have multiple phases); stopped/archived experiments still rejected with pointers to `resume_experiment` / `archive_experiment`.

@@ -418,7 +418,7 @@ export async function registerDefaultsTools({
     {
       title: "Set User Defaults",
       description:
-        "Sets custom default values for experiment configuration that override automatic detection. Use when automatic defaults select the wrong datasource or assignment query. Find valid IDs by calling get_defaults first. Persists until cleared with clear_user_defaults.",
+        "Sets custom default values for experiment configuration that override automatic detection. Use when automatic defaults select the wrong datasource or assignment query. Find valid datasource and assignment query IDs with get_data_sources, or see the current defaults with get_defaults. Persists until cleared with clear_user_defaults.",
       inputSchema: z.object({
         datasourceId: z
           .string()

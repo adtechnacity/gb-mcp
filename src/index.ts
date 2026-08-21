@@ -12,6 +12,7 @@ import { registerSearchTools } from "./tools/search.js";
 import { registerDefaultsTools } from "./tools/defaults.js";
 import { registerMetricsTools } from "./tools/metrics.js";
 import { registerDimensionTools } from "./tools/dimensions.js";
+import { registerDataSourceTools } from "./tools/data-sources.js";
 import { registerExperimentPrompts } from "./prompts/experiment-prompts.js";
 import packageDetails from "../package.json" with { type: "json" };
 
@@ -106,6 +107,12 @@ registerDimensionTools({
   apiKey,
   appOrigin,
   user,
+});
+
+registerDataSourceTools({
+  server,
+  baseApiUrl,
+  apiKey,
 });
 
 registerExperimentPrompts({

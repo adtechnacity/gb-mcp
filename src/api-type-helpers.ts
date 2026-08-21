@@ -94,9 +94,11 @@ export type GetFactMetricResponse =
 export type GetStaleFeatureResponse =
   Paths["/stale-features"]["get"]["responses"][200]["content"]["application/json"];
 
-// Data sources (used by defaults)
+// Data sources (used by defaults and the get_data_sources tool)
 export type ListDataSourcesResponse =
   Paths["/data-sources"]["get"]["responses"][200]["content"]["application/json"];
+export type GetDataSourceResponse =
+  Paths["/data-sources/{id}"]["get"]["responses"][200]["content"]["application/json"];
 
 // ─── Experiment mutations ───────────────────────────────────────────
 export type UpdateExperimentResponse =
