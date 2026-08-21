@@ -33,20 +33,22 @@ export function registerDataSourceTools({
       title: "Get Data Sources",
       description:
         "Lists data sources (warehouses GrowthBook queries for experiment analysis) or fetches one by ID. Returns name, type, linked projects, identifier types, and — in single-ID mode — the full exposure/assignment query SQL. Use this to find the datasource ID needed by create_fact_table and create_dimension, or to audit how experiment exposure is queried. Note: connection settings (host, credentials) are write- and read-protected — the API never exposes them and they can only be changed in the GrowthBook UI (Settings → Data Sources).",
-      inputSchema: z.object({
-        datasourceId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            "Fetch a single data source by id (includes full assignment query SQL)",
-          ),
-        project: z
-          .string()
-          .describe("Project ID (use get_projects to find IDs).")
-          .optional(),
-        ...paginationSchema,
-      }),
+      inputSchema: z
+        .object({
+          datasourceId: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              "Fetch a single data source by id (includes full assignment query SQL)",
+            ),
+          project: z
+            .string()
+            .describe("Project ID (use get_projects to find IDs).")
+            .optional(),
+          ...paginationSchema,
+        })
+        .strict(),
       annotations: {
         readOnlyHint: true,
       },

@@ -48,17 +48,19 @@ export function registerMetricsTools({
       title: "Get Metrics",
       description:
         "Lists metrics in GrowthBook. Metrics measure experiment success (e.g., conversion rate, revenue per user). Two metric types: Fact metrics (IDs start with 'fact__') are modern and recommended for new setups; Legacy metrics are an older format, still supported. Use this to find metric IDs for analyzing experiments or understand available success measures. Single metric fetch includes full definition and GrowthBook link. When fetching a single metric by ID, the tool auto-routes based on the prefix — agents do not need to choose an endpoint.",
-      inputSchema: z.object({
-        project: z
-          .string()
-          .describe("The ID of the project to filter metrics by")
-          .optional(),
-        metricId: z
-          .string()
-          .describe("The ID of the metric to fetch")
-          .optional(),
-        ...paginationSchema,
-      }),
+      inputSchema: z
+        .object({
+          project: z
+            .string()
+            .describe("The ID of the project to filter metrics by")
+            .optional(),
+          metricId: z
+            .string()
+            .describe("The ID of the metric to fetch")
+            .optional(),
+          ...paginationSchema,
+        })
+        .strict(),
       annotations: {
         readOnlyHint: true,
       },

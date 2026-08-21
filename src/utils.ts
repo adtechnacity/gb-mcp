@@ -735,6 +735,11 @@ export async function fetchWithPagination(
         emptyData[key] = [];
       }
     }
+    emptyData.offset = offset;
+    emptyData.limit = limit;
+    emptyData.count = 0;
+    emptyData.hasMore = false;
+    emptyData.nextOffset = null;
     return emptyData;
   }
 
@@ -768,6 +773,15 @@ export async function fetchWithPagination(
       data[key] = [...data[key]].reverse();
     }
   }
+
+  // The API responded in ascending coordinates for the translated request;
+  // pagination fields must be in the caller's newest-first space (offset
+  // counts from the newest end), or feeding nextOffset back loops/stops early.
+  data.offset = offset;
+  data.limit = limit;
+  data.total = total;
+  data.hasMore = offset + effectiveLimit < total;
+  data.nextOffset = data.hasMore ? offset + effectiveLimit : null;
 
   return data;
 }

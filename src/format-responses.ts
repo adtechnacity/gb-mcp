@@ -231,6 +231,9 @@ export function formatSdkConnections(data: ListSdkConnectionsResponse): string {
 export function formatFeatureFlagList(data: ListFeaturesResponse): string {
   const features = data.features || [];
   if (features.length === 0) {
+    if (data.total && data.total > 0) {
+      return `No feature flags in this page (offset is past the end). Total: ${data.total}. Use offset=0 to start from the beginning.`;
+    }
     return "No feature flags found. Use create_feature_flag to create one.";
   }
 
@@ -487,6 +490,9 @@ export function formatFeatureRuleRemoved(
 export function formatExperimentList(data: ListExperimentsResponse): string {
   const experiments = data.experiments || [];
   if (experiments.length === 0) {
+    if (data.total && data.total > 0) {
+      return `No experiments in this page (offset is past the end). Total: ${data.total}. Use offset=0 to start from the beginning.`;
+    }
     return "No experiments found. Use create_experiment to create one.";
   }
 
