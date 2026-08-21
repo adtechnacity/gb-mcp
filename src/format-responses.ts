@@ -22,6 +22,8 @@ import type {
   ListFactTablesResponse,
   Feature,
   GetStaleFeatureResponse,
+  ListDataSourcesResponse,
+  GetDataSourceResponse,
 } from "./api-type-helpers.js";
 
 // Helper to resolve a metric ID to a display name using an optional lookup
@@ -61,6 +63,88 @@ export function formatProjects(data: ListProjectsResponse): string {
     "",
     `Use the \`id\` value when creating feature flags or experiments scoped to a project.`,
   ].join("\n");
+}
+
+// ─── Data Sources ───────────────────────────────────────────────────
+
+export function formatDataSources(data: ListDataSourcesResponse): string {
+  const dataSources = data.dataSources || [];
+  if (dataSources.length === 0) {
+    return "No data sources found. Data sources are configured in the GrowthBook UI (Settings → Data Sources).";
+  }
+
+  const lines = dataSources.map((ds) => {
+    const parts = [`- **${ds.name}** (id: \`${ds.id}\`, type: ${ds.type})`];
+    if (ds.description) parts.push(`  ${ds.description}`);
+    if (ds.projectIds?.length)
+      parts.push(
+        `  Projects: ${ds.projectIds.map((p) => `\`${p}\``).join(", ")}`,
+      );
+    if (ds.identifierTypes?.length)
+      parts.push(
+        `  Identifier types: ${ds.identifierTypes.map((i) => `\`${i.id}\``).join(", ")}`,
+      );
+    if (ds.assignmentQueries?.length)
+      parts.push(
+        `  Assignment queries: ${ds.assignmentQueries.map((q) => `\`${q.id}\``).join(", ")}`,
+      );
+    return parts.join("\n");
+  });
+
+  return [
+    `**${dataSources.length} data source(s):**`,
+    "",
+    ...lines,
+    "",
+    "Pass a `dataSourceId` to see full details including exposure/assignment query SQL. Connection settings (host, credentials) are never exposed by the API — manage those in the GrowthBook UI (Settings → Data Sources).",
+  ].join("\n");
+}
+
+export function formatDataSourceDetail(data: GetDataSourceResponse): string {
+  const ds = data.dataSource;
+  const lines = [
+    `**Data Source: ${ds.name}** (id: \`${ds.id}\`, type: ${ds.type})`,
+  ];
+  if (ds.description) lines.push(ds.description);
+  lines.push(`Created: ${ds.dateCreated} | Updated: ${ds.dateUpdated}`);
+  if (ds.projectIds?.length)
+    lines.push(`Projects: ${ds.projectIds.map((p) => `\`${p}\``).join(", ")}`);
+  if (ds.eventTracker) lines.push(`Event tracker: ${ds.eventTracker}`);
+
+  if (ds.identifierTypes?.length) {
+    lines.push("", "**Identifier types:**");
+    for (const i of ds.identifierTypes) {
+      lines.push(`- \`${i.id}\`${i.description ? ` — ${i.description}` : ""}`);
+    }
+  }
+
+  if (ds.assignmentQueries?.length) {
+    lines.push("", "**Assignment (exposure) queries:**");
+    for (const q of ds.assignmentQueries) {
+      lines.push(
+        `- **${q.name}** (id: \`${q.id}\`, identifierType: \`${q.identifierType}\`)`,
+      );
+      if (q.description) lines.push(`  ${q.description}`);
+      if (q.sql) lines.push("", "```sql", q.sql, "```");
+    }
+  }
+
+  if (ds.identifierJoinQueries?.length) {
+    lines.push("", "**Identifier join queries:**");
+    for (const q of ds.identifierJoinQueries) {
+      lines.push(
+        `- Joins: ${q.identifierTypes.map((t) => `\`${t}\``).join(" ↔ ")}`,
+      );
+      if (q.sql) lines.push("", "```sql", q.sql, "```");
+    }
+  }
+
+  lines.push(
+    "",
+    "Note: connection settings (host, credentials) are never exposed by the API — manage those in the GrowthBook UI (Settings → Data Sources).",
+  );
+
+  return lines.join("\n");
 }
 
 // ─── Environments ───────────────────────────────────────────────────
