@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.claude
+node_modules
+server
+build
+test
+docs
+scripts
+*.mcpb
+.env
+.npm-cache
+scratch.js
